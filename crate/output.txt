@@ -1,0 +1,340 @@
+warning: unused import: `Deserialize`
+ --> src/emitter.rs:2:24
+  |
+2 | use serde::{Serialize, Deserialize};
+  |                        ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `to_value`
+ --> src/dumper.rs:7:42
+  |
+7 | use serde_json::{json, to_string_pretty, to_value};
+  |                                          ^^^^^^^^
+
+warning: unused import: `indexmap::IndexMap`
+ --> src/dumper.rs:8:5
+  |
+8 | use indexmap::IndexMap;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::BTreeMap`
+ --> src/creator.rs:1:5
+  |
+1 | use std::collections::BTreeMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `JsonExportEntry`
+ --> src/creator.rs:6:42
+  |
+6 | use crate::namco_file::{NamcoEffectFile, JsonExportEntry};
+  |                                          ^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::emitter::EmitterData`
+ --> src/creator.rs:8:5
+  |
+8 | use crate::emitter::EmitterData;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::io::Seek`
+   --> src/reader.rs:387:13
+    |
+387 |         use std::io::Seek;
+    |             ^^^^^^^^^^^^^
+
+warning: unused variable: `is_64_bit`
+  --> src/enums.rs:12:31
+   |
+12 |     pub fn from_raw(raw: u32, is_64_bit: bool) -> Option<Self> {
+   |                               ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_is_64_bit`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `particle_fluctuation`
+    --> src/emitter.rs:1909:13
+     |
+1909 |         let particle_fluctuation = ParticleFlucInfo::read(reader)?;
+     |             ^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_particle_fluctuation`
+
+warning: unused variable: `sampler0`
+    --> src/emitter.rs:1911:13
+     |
+1911 |         let sampler0 = TextureSampler::read(reader, version)?;
+     |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_sampler0`
+
+warning: unused variable: `sampler1`
+    --> src/emitter.rs:1912:13
+     |
+1912 |         let sampler1 = TextureSampler::read(reader, version)?;
+     |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_sampler1`
+
+warning: unused variable: `sampler2`
+    --> src/emitter.rs:1913:13
+     |
+1913 |         let sampler2 = TextureSampler::read(reader, version)?;
+     |             ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_sampler2`
+
+warning: unused variable: `sampler3`
+    --> src/emitter.rs:1915:14
+     |
+1915 |         let (sampler3, sampler4, sampler5) = if has_gt_40 {
+     |              ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_sampler3`
+
+warning: unused variable: `sampler4`
+    --> src/emitter.rs:1915:24
+     |
+1915 |         let (sampler3, sampler4, sampler5) = if has_gt_40 {
+     |                        ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_sampler4`
+
+warning: unused variable: `sampler5`
+    --> src/emitter.rs:1915:34
+     |
+1915 |         let (sampler3, sampler4, sampler5) = if has_gt_40 {
+     |                                  ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_sampler5`
+
+warning: unused variable: `texture_anim0`
+    --> src/emitter.rs:1925:13
+     |
+1925 |         let texture_anim0 = TextureAnim::read(reader, version)?;
+     |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_texture_anim0`
+
+warning: unused variable: `texture_anim1`
+    --> src/emitter.rs:1926:13
+     |
+1926 |         let texture_anim1 = TextureAnim::read(reader, version)?;
+     |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_texture_anim1`
+
+warning: unused variable: `texture_anim2`
+    --> src/emitter.rs:1927:13
+     |
+1927 |         let texture_anim2 = TextureAnim::read(reader, version)?;
+     |             ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_texture_anim2`
+
+warning: unused variable: `texture_anim3`
+    --> src/emitter.rs:1929:14
+     |
+1929 |         let (texture_anim3, texture_anim4, texture_anim5) = if has_gt_...
+     |              ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_texture_anim3`
+
+warning: unused variable: `texture_anim4`
+    --> src/emitter.rs:1929:29
+     |
+1929 | ... let (texture_anim3, texture_anim4, texture_anim5) = if has_gt_40 {
+     |                         ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_texture_anim4`
+
+warning: unused variable: `texture_anim5`
+    --> src/emitter.rs:1929:44
+     |
+1929 | ...nim3, texture_anim4, texture_anim5) = if has_gt_40 {
+     |                         ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_texture_anim5`
+
+warning: variable does not need to be mutable
+   --> src/ptcl_file.rs:202:13
+    |
+202 |         let mut primitives = None;
+    |             ----^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> src/ptcl_file.rs:203:13
+    |
+203 |         let mut materials = Vec::new();
+    |             ----^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src/ptcl_file.rs:204:13
+    |
+204 |         let mut textures = None;
+    |             ----^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src/ptcl_file.rs:205:13
+    |
+205 |         let mut textures_eft2 = None;
+    |             ----^^^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src/ptcl_file.rs:206:13
+    |
+206 |         let mut textures_ftex = None;
+    |             ----^^^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src/ptcl_file.rs:207:13
+    |
+207 |         let mut shaders = None;
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src/ptcl_file.rs:208:13
+    |
+208 |         let mut shader_cbuf = None;
+    |             ----^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src/ptcl_file.rs:209:13
+    |
+209 |         let mut shader_texture_ref = None;
+    |             ----^^^^^^^^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: unused variable: `alignment`
+   --> src/ptcl_file.rs:182:13
+    |
+182 |         let alignment = reader.read_u8()?;
+    |             ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_alignment`
+
+warning: unused variable: `name_offset`
+   --> src/ptcl_file.rs:184:13
+    |
+184 |         let name_offset = reader.read_u32_le()?;
+    |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_name_offset`
+
+warning: unused variable: `flag`
+   --> src/ptcl_file.rs:185:13
+    |
+185 |         let flag = reader.read_u16_le()?;
+    |             ^^^^ help: if this is intentional, prefix it with an underscore: `_flag`
+
+warning: unused variable: `relocation_table_offset`
+   --> src/ptcl_file.rs:187:13
+    |
+187 |         let relocation_table_offset = reader.read_u32_le()?;
+    |             ^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_relocation_table_offset`
+
+warning: value assigned to `current_section_start` is never read
+   --> src/ptcl_file.rs:222:13
+    |
+222 |             current_section_start = section_start;
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ this value is reassigned later and never used
+...
+273 |             current_section_start = reader.seek(SeekFrom::Current(0))?;
+    |             ---------------------------------------------------------- `current_section_start` is overwritten here before the previous value is read
+    |
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> src/ptcl_file.rs:474:9
+    |
+474 |     let mut shader_info = ShaderInfo { binary_data: None, compute_binar...
+    |         ----^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: unused variable: `emitter`
+   --> src/dumper.rs:400:31
+    |
+400 | ...n dump_emitter_resources(emitter: &crate::structs::Emitter, _emitter...
+    |                             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_emitter`
+
+warning: unused variable: `folder`
+  --> src/creator.rs:14:36
+   |
+14 | ... create_ptcl_from_folder(folder: &str) -> std::io::Result<PtclFile> {
+   |                             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_folder`
+
+warning: variable does not need to be mutable
+  --> src/creator.rs:90:13
+   |
+90 |         let mut namco = if namco_json_path.exists() {
+   |             ----^^^^^
+   |             |
+   |             help: remove this `mut`
+
+warning: unused variable: `emitter_set`
+   --> src/creator.rs:100:25
+    |
+100 |     fn load_emitter_set(emitter_set: &mut EmitterSet, set_dir: &Path) -...
+    |                         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_emitter_set`
+
+warning: struct `PtclBinaryHeader` is never constructed
+  --> src/ptcl_file.rs:18:8
+   |
+18 | struct PtclBinaryHeader {
+   |        ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `padding` and `unknown` are never read
+  --> src/ptcl_file.rs:40:9
+   |
+33 | struct SectionHeader {
+   |        ------------- fields in this struct
+...
+40 |     pub padding: u32,
+   |         ^^^^^^^
+41 |     pub children_count: u16,
+42 |     pub unknown: u16,
+   |         ^^^^^^^
+   |
+   = note: `SectionHeader` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: associated functions `file_extension_for_shader`, `group_emitters`, and `group_emitters_by_namco` are never used
+   --> src/dumper.rs:428:8
+    |
+ 99 | impl Dumper {
+    | ----------- associated functions in this implementation
+...
+428 |     fn file_extension_for_shader(binary_data: &[u8]) -> &'static str {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+441 |     fn group_emitters(emitters: &[EmitterData]) -> BTreeMap<String, Vec...
+    |        ^^^^^^^^^^^^^^
+...
+452 |     fn group_emitters_by_namco(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `load_emitter` is never used
+   --> src/creator.rs:147:8
+    |
+ 12 | impl Creator {
+    | ------------ associated function in this implementation
+...
+147 |     fn load_emitter(_emitter_dir: &Path) -> std::io::Result<Emitter> {
+    |        ^^^^^^^^^^^^
+
+warning: `effect_library` (lib) generated 43 warnings (run `cargo fix --lib -p effect_library` to apply 37 suggestions)
+warning: unused import: `Creator`
+ --> src/main.rs:1:57
+  |
+1 | use effect_library::{PtclFile, NamcoEffectFile, Dumper, Creator};
+  |                                                         ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `effect_library` (bin "effect_dumper") generated 1 warning (run `cargo fix --bin "effect_dumper" -p effect_library` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running `target/debug/effect_dumper /home/leap/Workshop/EffectLibraryRust/EffectConverter/ef_kirby_NEW.eff`
+Processing file: /home/leap/Workshop/EffectLibraryRust/EffectConverter/ef_kirby_NEW.eff
+Magic: EFFN
+Output directory: ef_kirby_NEW
+Detected EFFN file
+Position before alignment: 1373, align: 4096, file size estimate: large
+Calculated aligned position: 4096
+Position after alignment: 4096
+Test read: 0 bytes
+At EOF, no PTCL data
+Loaded EFFN file with 40 entries
+Starting dump_namco with 40 entries
+Exporting to JSON
+Exported NamcoFile.json
+Created EmitterSetInfo.txt
+No PTCL file found, writing NAMCO emitter set names only
+dump_namco completed successfully
+Successfully dumped EFFN file to ef_kirby_NEW

@@ -1,4 +1,5 @@
 ﻿using EffectLibrary;
+using EffectLibrary.EFT2;
 using EffectLibrary.Tools;
 using System.IO;
 using System.Text;

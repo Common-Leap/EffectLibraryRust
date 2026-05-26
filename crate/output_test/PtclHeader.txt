@@ -1,0 +1,16 @@
+{
+  "Header": {
+    "Magic": 2314885531392558678,
+    "GraphicsAPIVersion": 1024,
+    "VFXVersion": 22,
+    "ByteOrder": 65279,
+    "Alignment": 12,
+    "TargetAddressSize": 64,
+    "NameOffset": 32,
+    "Flag": 0,
+    "BlockOffset": 64,
+    "RelocationTableOffset": 0,
+    "FileSize": 14389760
+  },
+  "Name": ""
+}
