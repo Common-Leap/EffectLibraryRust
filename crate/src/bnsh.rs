@@ -8,34 +8,34 @@ const SHADER_STAGE_COUNT: usize = 6;
 const SHADER_STAGE_HEADER_SIZE: usize = 64;
 
 #[derive(Debug, Clone)]
-struct BinaryHeader {
-    magic: u64,
-    version_micro: u8,
-    version_minor: u8,
-    version_major: u16,
-    byte_order: u16,
-    alignment: u8,
-    target_address_size: u8,
-    name_offset: u32,
-    flag: u16,
-    block_offset: u16,
-    relocation_table_offset: u32,
-    file_size: u32,
+pub struct BinaryHeader {
+    pub magic: u64,
+    pub version_micro: u8,
+    pub version_minor: u8,
+    pub version_major: u16,
+    pub byte_order: u16,
+    pub alignment: u8,
+    pub target_address_size: u8,
+    pub name_offset: u32,
+    pub flag: u16,
+    pub block_offset: u16,
+    pub relocation_table_offset: u32,
+    pub file_size: u32,
 }
 
 #[derive(Debug, Clone)]
-struct BnshHeader {
-    version: u32,
-    code_target: u32,
-    compiler_version: u32,
-    unknown2: u64,
+pub struct BnshHeader {
+    pub version: u32,
+    pub code_target: u32,
+    pub compiler_version: u32,
+    pub unknown2: u64,
 }
 
 #[derive(Debug, Clone, Default)]
-struct ShaderCode {
-    control_code: Vec<u8>,
-    byte_code: Vec<u8>,
-    reserved: [u8; 32],
+pub struct ShaderCode {
+    pub control_code: Vec<u8>,
+    pub byte_code: Vec<u8>,
+    pub reserved: [u8; 32],
 }
 
 #[derive(Debug, Clone, Default)]
@@ -73,28 +73,28 @@ struct PendingReflection<'a> {
 }
 
 #[derive(Debug, Clone, Default)]
-struct BnshShaderProgram {
-    flags: u8,
-    code_type: u8,
-    format: u8,
-    padding: u8,
-    binary_format: u32,
-    memory_data: Vec<u8>,
-    stages: [Option<ShaderCode>; SHADER_STAGE_COUNT],
-    reflections: [Option<ShaderReflectionData>; SHADER_STAGE_COUNT],
+pub struct BnshShaderProgram {
+    pub flags: u8,
+    pub code_type: u8,
+    pub format: u8,
+    pub padding: u8,
+    pub binary_format: u32,
+    pub memory_data: Vec<u8>,
+    pub stages: [Option<ShaderCode>; SHADER_STAGE_COUNT],
+    pub reflections: [Option<ShaderReflectionData>; SHADER_STAGE_COUNT],
 }
 
 #[derive(Debug, Clone, Default)]
-struct ShaderVariation {
-    binary_program: BnshShaderProgram,
+pub struct ShaderVariation {
+    pub binary_program: BnshShaderProgram,
 }
 
 #[derive(Debug, Clone)]
-struct BnshFile {
-    bin_header: BinaryHeader,
-    header: BnshHeader,
-    name: String,
-    variations: Vec<ShaderVariation>,
+pub struct BnshFile {
+    pub bin_header: BinaryHeader,
+    pub header: BnshHeader,
+    pub name: String,
+    pub variations: Vec<ShaderVariation>,
 }
 
 #[derive(Debug, Default)]
@@ -396,7 +396,7 @@ pub fn canonicalize(data: &[u8]) -> io::Result<Vec<u8>> {
 }
 
 impl BnshFile {
-    fn read(data: &[u8]) -> io::Result<Self> {
+    pub fn read(data: &[u8]) -> io::Result<Self> {
         let mut reader = Cursor::new(data);
         let bin_header = BinaryHeader {
             magic: reader.read_u64::<LittleEndian>()?,
@@ -458,7 +458,7 @@ impl BnshFile {
         })
     }
 
-    fn write(&self) -> Vec<u8> {
+    pub fn write(&self) -> Vec<u8> {
         let mut writer = BinWriter::default();
         let mut relocation_table = RelocationTable::new(6);
         let mut string_table = StringTable::default();
@@ -474,7 +474,7 @@ impl BnshFile {
         writer.write_u32(0);
         string_table.add_file_name_entry(file_name_offset_pos, &self.name);
         writer.write_u16(self.bin_header.flag);
-        writer.write_u16(96);
+        writer.write_u16(self.bin_header.block_offset);
         relocation_table.save_header_offset(&mut writer);
         let file_size_pos = writer.position();
         writer.write_u32(0);
@@ -483,7 +483,10 @@ impl BnshFile {
         let grsc_start = writer.position();
         writer.write_signature("grsc");
         writer.save_header_block();
-        writer.write_u32(self.header.version);
+        let api_type = (self.header.version & 0xFFFF) as u16;
+        let api_version = (self.header.version >> 16) as u16;
+        writer.write_u16(api_type);
+        writer.write_u16(api_version);
         writer.write_u32(self.header.code_target);
         writer.write_u32(self.header.compiler_version);
         writer.write_u32(self.variations.len() as u32);
@@ -712,22 +715,16 @@ impl BnshFile {
         writer.align_bytes(1usize << self.bin_header.alignment);
         let byte_code_start = writer.position();
         writer.write_offset(pool_buffer_offset_pos);
-        let mut byte_code_blocks: HashMap<Vec<u8>, usize> = HashMap::new();
         for (variation_index, variation) in self.variations.iter().enumerate() {
             for stage_index in [0usize, 3, 4, 5] {
                 if let Some(code) = &variation.binary_program.stages[stage_index] {
                     if code.byte_code.is_empty() {
                         continue;
                     }
-                    if let Some(saved_offset) = byte_code_blocks.get(&code.byte_code) {
-                        writer.write_offset_to(stage_byte_code_offsets[variation_index][stage_index], *saved_offset);
-                    } else {
-                        writer.align_bytes(8);
-                        let offset = writer.position();
-                        byte_code_blocks.insert(code.byte_code.clone(), offset);
-                        writer.write_offset(stage_byte_code_offsets[variation_index][stage_index]);
-                        writer.write_bytes(&code.byte_code);
-                    }
+                    writer.align_bytes(8);
+                    let offset = writer.position();
+                    writer.write_offset(stage_byte_code_offsets[variation_index][stage_index]);
+                    writer.write_bytes(&code.byte_code);
                 }
             }
         }
@@ -1154,4 +1151,18 @@ fn res_string_compare(left: &str, right: &str) -> std::cmp::Ordering {
         return std::cmp::Ordering::Less;
     }
     left.cmp(right)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_shader_bnsh_roundtrip() {
+        let original = fs::read("../ef_samus/P_SamusFinalGround/impact1_b/Shader.bnsh").expect("failed to read shader.bnsh");
+        let bnsh = BnshFile::read(&original).expect("failed to parse BNSH");
+        let written = bnsh.write();
+        assert_eq!(original, written, "BNSH roundtrip failed");
+    }
 }

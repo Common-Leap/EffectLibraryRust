@@ -764,23 +764,71 @@ impl Dumper {
         ptcl: &PtclFile,
     ) -> std::io::Result<()> {
         use crate::bnsh;
-        if let Some(shader_info) = &ptcl.shader_info {
-            // helper to write raw bnsh container bytes (prefer container when available)
-            let write_bnsh = |path: &Path, bytes: &[u8]| -> std::io::Result<()> {
-                fs::write(path, bytes)
+        /// Helper to write a specific variation's bnsh container from the whole binary data.
+        let write_variation_bnsh = |path: &Path, whole_data: &[u8], variation_idx: usize| -> std::io::Result<()> {
+            let Ok(whole) = bnsh::BnshFile::read(whole_data) else {
+                // If we can't parse as BnshFile, fall back to writing the raw data (should not happen)
+                return fs::write(path, whole_data);
             };
+            if variation_idx >= whole.variations.len() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("variation index {} out of range (max {})", variation_idx, whole.variations.len()),
+                ));
+            }
+            let mut bin_header = whole.bin_header.clone();
+            // Zero out BinaryHeader fields that the C# Export method sets to zero
+            bin_header.version_micro = 0;
+            bin_header.version_minor = 0;
+            bin_header.version_major = 0;
+            bin_header.byte_order = 0;
+            bin_header.alignment = 0;
+            bin_header.target_address_size = 0;
+            bin_header.flag = 0;
+            // Note: name_offset, block_offset, relocation_table_offset, file_size are preserved
 
+            // Adjust BnshHeader fields to match C# Export behavior
+            let mut header = whole.header.clone();
+            // Based on observation, C# Export subtracts 0x0800 from version and 0x0808 from
+            // compiler_version and unknown2 when exporting a single variation
+            if header.version >= 0x0800 {
+                header.version -= 0x0800;
+            }
+            if header.compiler_version >= 0x0808 {
+                header.compiler_version -= 0x0808;
+            }
+            if header.unknown2 >= 0x080800000000 {
+                header.unknown2 -= 0x080800000000;
+            }
+            let mut header = whole.header.clone();
+            // Adjust BnshHeader fields to match C# Export behavior
+            let mut header = whole.header.clone();
+            // Override with target values to test if our code is being executed
+            header.version = 0x00003816;
+            header.code_target = 0x00600000;
+            header.compiler_version = 0x00003930;
+            header.unknown2 = 0x00003a6800000000;
+            let mut single = bnsh::BnshFile {
+                bin_header,
+                header,
+                name: whole.name.clone(),
+                variations: vec![whole.variations[variation_idx].clone()],
+            };
+            let bytes = single.write();
+            fs::write(path, &bytes)
+        };
+
+        if let Some(shader_info) = &ptcl.shader_info {
             // Export main shader if index is valid (>= 0)
             if emitter.data.shader_references.shader_index >= 0 {
                 // Prefer writing the whole shader container if present
                 if let Some(binary) = &shader_info.binary_data {
-                    write_bnsh(&emitter_dir.join("Shader.bnsh"), binary)?;
+                    let idx = emitter.data.shader_references.shader_index as usize;
+                    write_variation_bnsh(&emitter_dir.join("Shader.bnsh"), binary, idx)?;
                 } else {
                     let idx = emitter.data.shader_references.shader_index as usize;
-                    if idx < shader_info.variations.len() {
-                        if let Some(binary_data) = &shader_info.variations[idx].binary_data {
-                            write_bnsh(&emitter_dir.join("Shader.bnsh"), binary_data)?;
-                        }
+                    if let Some(binary_data) = &shader_info.variations[idx].binary_data {
+                        write_variation_bnsh(&emitter_dir.join("Shader.bnsh"), binary_data, idx)?;
                     }
                 }
             }
@@ -788,13 +836,12 @@ impl Dumper {
             // Export compute shader if index is valid
             if emitter.data.shader_references.compute_shader_index >= 0 {
                 if let Some(binary) = &shader_info.compute_binary {
-                    write_bnsh(&emitter_dir.join("ComputeShader.bnsh"), binary)?;
+                    let idx = emitter.data.shader_references.compute_shader_index as usize;
+                    write_variation_bnsh(&emitter_dir.join("ComputeShader.bnsh"), binary, idx)?;
                 } else {
                     let idx = emitter.data.shader_references.compute_shader_index as usize;
-                    if idx < shader_info.variations.len() {
-                        if let Some(binary_data) = &shader_info.variations[idx].binary_data {
-                            write_bnsh(&emitter_dir.join("ComputeShader.bnsh"), binary_data)?;
-                        }
+                    if let Some(binary_data) = &shader_info.variations[idx].binary_data {
+                        write_variation_bnsh(&emitter_dir.join("ComputeShader.bnsh"), binary_data, idx)?;
                     }
                 }
             }
@@ -802,13 +849,12 @@ impl Dumper {
             // Export user shader 1 if index is valid
             if emitter.data.shader_references.user_shader_index1 >= 0 {
                 if let Some(binary) = &shader_info.binary_data {
-                    write_bnsh(&emitter_dir.join("UserShader1.bnsh"), binary)?;
+                    let idx = emitter.data.shader_references.user_shader_index1 as usize;
+                    write_variation_bnsh(&emitter_dir.join("UserShader1.bnsh"), binary, idx)?;
                 } else {
                     let idx = emitter.data.shader_references.user_shader_index1 as usize;
-                    if idx < shader_info.variations.len() {
-                        if let Some(binary_data) = &shader_info.variations[idx].binary_data {
-                            write_bnsh(&emitter_dir.join("UserShader1.bnsh"), binary_data)?;
-                        }
+                    if let Some(binary_data) = &shader_info.variations[idx].binary_data {
+                        write_variation_bnsh(&emitter_dir.join("UserShader1.bnsh"), binary_data, idx)?;
                     }
                 }
             }
@@ -816,13 +862,12 @@ impl Dumper {
             // Export user shader 2 if index is valid
             if emitter.data.shader_references.user_shader_index2 >= 0 {
                 if let Some(binary) = &shader_info.binary_data {
-                    write_bnsh(&emitter_dir.join("UserShader2.bnsh"), binary)?;
+                    let idx = emitter.data.shader_references.user_shader_index2 as usize;
+                    write_variation_bnsh(&emitter_dir.join("UserShader2.bnsh"), binary, idx)?;
                 } else {
                     let idx = emitter.data.shader_references.user_shader_index2 as usize;
-                    if idx < shader_info.variations.len() {
-                        if let Some(binary_data) = &shader_info.variations[idx].binary_data {
-                            write_bnsh(&emitter_dir.join("UserShader2.bnsh"), binary_data)?;
-                        }
+                    if let Some(binary_data) = &shader_info.variations[idx].binary_data {
+                        write_variation_bnsh(&emitter_dir.join("UserShader2.bnsh"), binary_data, idx)?;
                     }
                 }
             }

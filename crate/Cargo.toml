@@ -3,6 +3,7 @@ name = "effect_library"
 version = "0.1.0"
 edition = "2021"
 description = "A Rust library for decompiling Nintendo Switch VFX effect files (.eff, .ptcl)"
+auto-bins = false
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
