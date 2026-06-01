@@ -563,13 +563,7 @@ impl BnshFile {
             reflection_program_offset_positions[variation_index] = reflection_stage_array_offset_pos;
             writer.write_zeroes(32);
 
-            // Write the additional fields from BnshShaderProgramHeader (extending from 96 to 176 bytes total)
-            // These are: ParentVariationOffset (8), ShaderReflectionOffset (8), BinaryOffset (8), ParentBnshOffset (8)
-            writer.write_u64(0); // ParentVariationOffset
-            writer.write_u64(0); // ShaderReflectionOffset
-            writer.write_u64(0); // BinaryOffset
-            writer.write_u64(0); // ParentBnshOffset
-            writer.write_zeroes(32); // Reserved5-8
+
 
             let mut control_code_offset_positions = [0usize; SHADER_STAGE_COUNT];
             let program_stage_headers_start = writer.position();
