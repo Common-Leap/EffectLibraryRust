@@ -25,10 +25,18 @@ pub struct BinaryHeader {
 
 #[derive(Debug, Clone)]
 pub struct BnshHeader {
-    pub version: u32,
-    pub code_target: u32,
-    pub compiler_version: u32,
-    pub unknown2: u64,
+    pub magic: u32,              // "grsc" = 0x63737267
+    pub block_offset: u32,       // Calculated during save
+    pub block_size: u32,         // Calculated during save
+    pub padding: u32,            // Reserved, usually 0
+    pub api_type: u16,           // Default 4 for new files
+    pub api_version: u16,        // Default 0
+    pub code_target: u32,        // Default 0
+    pub compiler_version: u32,   // Default 131330 (0x20102)
+    pub num_variation: u32,      // Number of variations
+    pub variation_start_offset: u64,  // Offset to first variation
+    pub memory_pool_offset: u64, // Memory pool offset
+    pub unknown2: u64,           // Default 4785117553819657 (0x00431D00001E3008)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -424,21 +432,31 @@ impl BnshFile {
         if magic != u32::from_le_bytes(*b"grsc") {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid grsc header"));
         }
-        let _block_size = reader.read_u32::<LittleEndian>()?;
-        let _block_offset = reader.read_u64::<LittleEndian>()?;
-        let version = reader.read_u32::<LittleEndian>()?;
+        let block_size = reader.read_u32::<LittleEndian>()?;
+        let block_offset_field = reader.read_u32::<LittleEndian>()?;
+        let padding = reader.read_u32::<LittleEndian>()?;
+        let api_type = reader.read_u16::<LittleEndian>()?;
+        let api_version = reader.read_u16::<LittleEndian>()?;
         let code_target = reader.read_u32::<LittleEndian>()?;
         let compiler_version = reader.read_u32::<LittleEndian>()?;
         let variation_count = reader.read_u32::<LittleEndian>()?;
         let variation_start_offset = reader.read_u64::<LittleEndian>()?;
-        let _memory_pool_offset = reader.read_u64::<LittleEndian>()?;
+        let memory_pool_offset = reader.read_u64::<LittleEndian>()?;
         let unknown2 = reader.read_u64::<LittleEndian>()?;
         reader.seek(SeekFrom::Current(40))?;
 
         let header = BnshHeader {
-            version,
+            magic,
+            block_offset: block_offset_field,
+            block_size,
+            padding,
+            api_type,
+            api_version,
             code_target,
             compiler_version,
+            num_variation: variation_count,
+            variation_start_offset,
+            memory_pool_offset,
             unknown2,
         };
 
@@ -483,10 +501,8 @@ impl BnshFile {
         let grsc_start = writer.position();
         writer.write_signature("grsc");
         writer.save_header_block();
-        let api_type = (self.header.version & 0xFFFF) as u16;
-        let api_version = (self.header.version >> 16) as u16;
-        writer.write_u16(api_type);
-        writer.write_u16(api_version);
+        writer.write_u16(self.header.api_type);
+        writer.write_u16(self.header.api_version);
         writer.write_u32(self.header.code_target);
         writer.write_u32(self.header.compiler_version);
         writer.write_u32(self.variations.len() as u32);
@@ -547,6 +563,14 @@ impl BnshFile {
             reflection_program_offset_positions[variation_index] = reflection_stage_array_offset_pos;
             writer.write_zeroes(32);
 
+            // Write the additional fields from BnshShaderProgramHeader (extending from 96 to 176 bytes total)
+            // These are: ParentVariationOffset (8), ShaderReflectionOffset (8), BinaryOffset (8), ParentBnshOffset (8)
+            writer.write_u64(0); // ParentVariationOffset
+            writer.write_u64(0); // ShaderReflectionOffset
+            writer.write_u64(0); // BinaryOffset
+            writer.write_u64(0); // ParentBnshOffset
+            writer.write_zeroes(32); // Reserved5-8
+
             let mut control_code_offset_positions = [0usize; SHADER_STAGE_COUNT];
             let program_stage_headers_start = writer.position();
 
@@ -567,11 +591,12 @@ impl BnshFile {
             relocation_table.save_entry(program_stage_headers_start + 8, 1, struct_count, 7, 0);
             relocation_table.save_entry(program_stage_headers_start + 16, 1, struct_count, 7, 4);
 
-            let has_reflection = program.stages[0].is_some()
-                && program.reflections[0].is_some()
-                || program.stages[3].is_some() && program.reflections[3].is_some()
-                || program.stages[4].is_some() && program.reflections[4].is_some()
-                || program.stages[5].is_some() && program.reflections[5].is_some();
+            let has_reflection = program.reflections[0].is_some()
+                || program.reflections[1].is_some()
+                || program.reflections[2].is_some()
+                || program.reflections[3].is_some()
+                || program.reflections[4].is_some()
+                || program.reflections[5].is_some();
             let mut reflection_stage_offset_positions = [0usize; SHADER_STAGE_COUNT];
             if has_reflection {
                 writer.write_offset(reflection_stage_array_offset_pos);
@@ -712,7 +737,8 @@ impl BnshFile {
         relocation_table.set_section(2, writer.position() as u32, 0);
         relocation_table.set_section(3, writer.position() as u32, 0);
 
-        writer.align_bytes(1usize << self.bin_header.alignment);
+        // Align to 4096 bytes before bytecode section (matching C# BnshSaver.cs line 341)
+        writer.align_bytes(4096);
         let byte_code_start = writer.position();
         writer.write_offset(pool_buffer_offset_pos);
         for (variation_index, variation) in self.variations.iter().enumerate() {
@@ -743,6 +769,7 @@ impl BnshFile {
         );
         relocation_table.write(&mut writer);
         writer.write_header_blocks();
+        
         writer.patch_u32(file_size_pos, writer.position() as u32);
         writer.output
     }

@@ -764,58 +764,67 @@ impl Dumper {
         ptcl: &PtclFile,
     ) -> std::io::Result<()> {
         use crate::bnsh;
+        use byteorder::{LittleEndian, ReadBytesExt};
+        use std::io::Cursor;
+        
         /// Helper to write a specific variation's bnsh container from the whole binary data.
         let write_variation_bnsh = |path: &Path, whole_data: &[u8], variation_idx: usize| -> std::io::Result<()> {
-            let Ok(whole) = bnsh::BnshFile::read(whole_data) else {
-                // If we can't parse as BnshFile, fall back to writing the raw data (should not happen)
-                return fs::write(path, whole_data);
-            };
-            if variation_idx >= whole.variations.len() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    format!("variation index {} out of range (max {})", variation_idx, whole.variations.len()),
-                ));
+            // Try parsing as a complete BNSH file first (should start with "BNSH")
+            match bnsh::BnshFile::read(whole_data) {
+                Ok(whole) => {
+                    if variation_idx >= whole.variations.len() {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            format!("variation index {} out of range (max {})", variation_idx, whole.variations.len()),
+                        ));
+                    }
+                    
+                    // Create fresh headers for single-variation export (matching C# behavior)
+                    let bin_header = bnsh::BinaryHeader {
+                        magic: 0x48534E42, // "BNSH" in little-endian
+                        version_micro: 0,
+                        version_minor: 0,
+                        version_major: 0,
+                        byte_order: 0, // No BOM in single-variation export
+                        alignment: 0,
+                        target_address_size: 0,
+                        flag: 0,
+                        block_offset: 96,
+                        relocation_table_offset: 0,
+                        file_size: 0, // Calculated during write
+                        name_offset: 0,
+                    };
+                    
+                    let header = bnsh::BnshHeader {
+                        magic: 0x63737267, // "grsc" in little-endian
+                        block_offset: 0,
+                        block_size: 0,
+                        padding: 0,
+                        api_type: 0,
+                        api_version: 0,
+                        code_target: 0,
+                        compiler_version: 0,
+                        num_variation: 1,
+                        variation_start_offset: 0,
+                        memory_pool_offset: 0,
+                        unknown2: 0,
+                    };
+                    
+                    let single = bnsh::BnshFile {
+                        bin_header,
+                        header,
+                        name: "dummy".to_string(),
+                        variations: vec![whole.variations[variation_idx].clone()],
+                    };
+                    let bytes = single.write();
+                    return fs::write(path, &bytes);
+                }
+                Err(_e) => {
+                    // Fallback: write raw data
+                }
             }
-            let mut bin_header = whole.bin_header.clone();
-            // Zero out BinaryHeader fields that the C# Export method sets to zero
-            bin_header.version_micro = 0;
-            bin_header.version_minor = 0;
-            bin_header.version_major = 0;
-            bin_header.byte_order = 0;
-            bin_header.alignment = 0;
-            bin_header.target_address_size = 0;
-            bin_header.flag = 0;
-            // Note: name_offset, block_offset, relocation_table_offset, file_size are preserved
 
-            // Adjust BnshHeader fields to match C# Export behavior
-            let mut header = whole.header.clone();
-            // Based on observation, C# Export subtracts 0x0800 from version and 0x0808 from
-            // compiler_version and unknown2 when exporting a single variation
-            if header.version >= 0x0800 {
-                header.version -= 0x0800;
-            }
-            if header.compiler_version >= 0x0808 {
-                header.compiler_version -= 0x0808;
-            }
-            if header.unknown2 >= 0x080800000000 {
-                header.unknown2 -= 0x080800000000;
-            }
-            let mut header = whole.header.clone();
-            // Adjust BnshHeader fields to match C# Export behavior
-            let mut header = whole.header.clone();
-            // Override with target values to test if our code is being executed
-            header.version = 0x00003816;
-            header.code_target = 0x00600000;
-            header.compiler_version = 0x00003930;
-            header.unknown2 = 0x00003a6800000000;
-            let mut single = bnsh::BnshFile {
-                bin_header,
-                header,
-                name: whole.name.clone(),
-                variations: vec![whole.variations[variation_idx].clone()],
-            };
-            let bytes = single.write();
-            fs::write(path, &bytes)
+            fs::write(path, whole_data)
         };
 
         if let Some(shader_info) = &ptcl.shader_info {
@@ -827,8 +836,11 @@ impl Dumper {
                     write_variation_bnsh(&emitter_dir.join("Shader.bnsh"), binary, idx)?;
                 } else {
                     let idx = emitter.data.shader_references.shader_index as usize;
-                    if let Some(binary_data) = &shader_info.variations[idx].binary_data {
-                        write_variation_bnsh(&emitter_dir.join("Shader.bnsh"), binary_data, idx)?;
+                    if idx < shader_info.variations.len() {
+                        if let Some(binary_data) = &shader_info.variations[idx].binary_data {
+                            // Individual variation data is already single-variation, so use idx=0
+                            write_variation_bnsh(&emitter_dir.join("Shader.bnsh"), binary_data, 0)?;
+                        }
                     }
                 }
             }
@@ -840,8 +852,11 @@ impl Dumper {
                     write_variation_bnsh(&emitter_dir.join("ComputeShader.bnsh"), binary, idx)?;
                 } else {
                     let idx = emitter.data.shader_references.compute_shader_index as usize;
-                    if let Some(binary_data) = &shader_info.variations[idx].binary_data {
-                        write_variation_bnsh(&emitter_dir.join("ComputeShader.bnsh"), binary_data, idx)?;
+                    if idx < shader_info.variations.len() {
+                        if let Some(binary_data) = &shader_info.variations[idx].binary_data {
+                            // Individual variation data is already single-variation, so use idx=0
+                            write_variation_bnsh(&emitter_dir.join("ComputeShader.bnsh"), binary_data, 0)?;
+                        }
                     }
                 }
             }
@@ -853,8 +868,11 @@ impl Dumper {
                     write_variation_bnsh(&emitter_dir.join("UserShader1.bnsh"), binary, idx)?;
                 } else {
                     let idx = emitter.data.shader_references.user_shader_index1 as usize;
-                    if let Some(binary_data) = &shader_info.variations[idx].binary_data {
-                        write_variation_bnsh(&emitter_dir.join("UserShader1.bnsh"), binary_data, idx)?;
+                    if idx < shader_info.variations.len() {
+                        if let Some(binary_data) = &shader_info.variations[idx].binary_data {
+                            // Individual variation data is already single-variation, so use idx=0
+                            write_variation_bnsh(&emitter_dir.join("UserShader1.bnsh"), binary_data, 0)?;
+                        }
                     }
                 }
             }
@@ -866,8 +884,11 @@ impl Dumper {
                     write_variation_bnsh(&emitter_dir.join("UserShader2.bnsh"), binary, idx)?;
                 } else {
                     let idx = emitter.data.shader_references.user_shader_index2 as usize;
-                    if let Some(binary_data) = &shader_info.variations[idx].binary_data {
-                        write_variation_bnsh(&emitter_dir.join("UserShader2.bnsh"), binary_data, idx)?;
+                    if idx < shader_info.variations.len() {
+                        if let Some(binary_data) = &shader_info.variations[idx].binary_data {
+                            // Individual variation data is already single-variation, so use idx=0
+                            write_variation_bnsh(&emitter_dir.join("UserShader2.bnsh"), binary_data, 0)?;
+                        }
                     }
                 }
             }
