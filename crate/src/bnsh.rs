@@ -492,7 +492,7 @@ impl BnshFile {
         writer.write_u32(0);
         string_table.add_file_name_entry(file_name_offset_pos, &self.name);
         writer.write_u16(self.bin_header.flag);
-        writer.write_u16(self.bin_header.block_offset);
+        writer.write_u16(0x60);
         relocation_table.save_header_offset(&mut writer);
         let file_size_pos = writer.position();
         writer.write_u32(0);
@@ -735,16 +735,23 @@ impl BnshFile {
         writer.align_bytes(4096);
         let byte_code_start = writer.position();
         writer.write_offset(pool_buffer_offset_pos);
+        let mut byte_code_blocks: HashMap<Vec<u8>, usize> = HashMap::new();
         for (variation_index, variation) in self.variations.iter().enumerate() {
             for stage_index in [0usize, 3, 4, 5] {
                 if let Some(code) = &variation.binary_program.stages[stage_index] {
                     if code.byte_code.is_empty() {
                         continue;
                     }
-                    writer.align_bytes(8);
-                    let offset = writer.position();
-                    writer.write_offset(stage_byte_code_offsets[variation_index][stage_index]);
-                    writer.write_bytes(&code.byte_code);
+                    let offset_save = stage_byte_code_offsets[variation_index][stage_index];
+                    if let Some(saved_offset) = byte_code_blocks.get(&code.byte_code) {
+                        writer.write_offset_to(offset_save, *saved_offset);
+                    } else {
+                        writer.align_bytes(8);
+                        let offset = writer.position();
+                        byte_code_blocks.insert(code.byte_code.clone(), offset);
+                        writer.write_offset(offset_save);
+                        writer.write_bytes(&code.byte_code);
+                    }
                 }
             }
         }
@@ -753,6 +760,11 @@ impl BnshFile {
         let byte_code_size = (byte_code_end - byte_code_start) as u32;
         writer.patch_u32(pool_size_pos, byte_code_size);
         relocation_table.set_section(4, byte_code_start as u32, byte_code_size);
+
+        writer.align_bytes(8);
+        let grsc_size = (writer.position() - grsc_start) as u32;
+        writer.patch_u32(grsc_start + 4, grsc_size);
+        writer.patch_u32(grsc_start + 8, grsc_size);
 
         let string_table_start = writer.position();
         string_table.write(&mut writer);
@@ -1178,6 +1190,21 @@ fn res_string_compare(left: &str, right: &str) -> std::cmp::Ordering {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn ef_mario_bnsh_parity() {
+        use std::fs;
+        for (label, path) in [("main", "/tmp/main_bnsh.bin"), ("compute", "/tmp/compute_bnsh.bin")] {
+            if !std::path::Path::new(path).exists() {
+                continue;
+            }
+            let original = fs::read(path).expect("read");
+            let file = BnshFile::read(&original).expect("parse");
+            let written = file.write();
+            assert_eq!(original, written, "{label} BNSH mismatch");
+            eprintln!("{label}: MATCH ({} bytes)", original.len());
+        }
+    }
 
     #[test]
     fn test_shader_bnsh_roundtrip() {

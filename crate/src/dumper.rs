@@ -138,29 +138,6 @@ fn write_u64_le_at(data: &mut [u8], offset: usize, value: u64) {
     data[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
 }
 
-fn write_rlt_entry(data: &mut [u8], offset: usize, entry_offset: u32, array_count: u16, offset_count: u8, padding_size: u8) {
-    write_u32_le_at(data, offset, entry_offset);
-    write_u16_le_at(data, offset + 4, array_count);
-    data[offset + 6] = offset_count;
-    data[offset + 7] = padding_size;
-}
-
-fn compute_single_entry_dict_ref_bit(texture_name: &str) -> u32 {
-    let suffix = texture_name
-        .rsplit(|c: char| !c.is_ascii_digit())
-        .find(|part| !part.is_empty());
-
-    let Some(suffix) = suffix else {
-        return 4;
-    };
-
-    let value = u32::from_str_radix(suffix, 16).unwrap_or(0);
-    if value == 0 {
-        4
-    } else {
-        value.trailing_zeros()
-    }
-}
 
 fn export_single_texture_bntx(
     global_bntx: &[u8],
@@ -168,161 +145,7 @@ fn export_single_texture_bntx(
     texture_name: &str,
     output_path: &Path,
 ) -> std::io::Result<()> {
-    let texture_table_offset = read_u64_le_at(global_bntx, 0x28)? as usize;
-    let global_brtd_offset = read_u64_le_at(global_bntx, 0x30)? as usize;
-    let brti_offset = read_u64_le_at(global_bntx, texture_table_offset + texture_index * 8)? as usize;
-    let brti_metadata_size = read_u32_le_at(global_bntx, brti_offset + 8)? as usize;
-    let mip_count = read_u16_le_at(global_bntx, brti_offset + 0x16)? as usize;
-    let total_texture_size = read_u32_le_at(global_bntx, brti_offset + 0x50)? as usize;
-    let data_alignment = read_u32_le_at(global_bntx, brti_offset + 0x54)? as usize;
-    let global_image_table_offset = read_u64_le_at(global_bntx, brti_offset + 0x70)? as usize;
-    let dict_ref_bit = compute_single_entry_dict_ref_bit(texture_name);
-
-    let string_section_offset = 0x1A0usize;
-    let string_data_offset = string_section_offset + 0x18;
-    let string_bytes_end = string_data_offset + 2 + texture_name.len() + 1;
-    let dict_offset = align_up(string_bytes_end, 8);
-    let brti_offset_new = align_up(dict_offset + 0x28, 8);
-    let runtime_block_1_offset = brti_offset_new + 0xA0;
-    let runtime_block_2_offset = runtime_block_1_offset + 0x100;
-    let image_table_offset_new = runtime_block_2_offset + 0x100;
-    let section1_size = image_table_offset_new + mip_count * 8;
-    let brtd_offset_new = align_up(section1_size + 0x10, 0x1000) - 0x10;
-    let brti_section_size = brtd_offset_new - brti_offset_new;
-
-    let aligned_payload_size = align_up(total_texture_size, 0x1000.max(data_alignment.max(0x10)));
-
-    let mut mip_offsets = Vec::with_capacity(mip_count);
-    for i in 0..mip_count {
-        mip_offsets.push(read_u64_le_at(
-            global_bntx,
-            global_image_table_offset + i * 8,
-        )?);
-    }
-
-    let global_brtd_payload_start = global_brtd_offset + 0x10;
-    let first_mip_relative_offset = mip_offsets
-        .first()
-        .copied()
-        .unwrap_or(global_brtd_payload_start as u64)
-        .saturating_sub(global_brtd_payload_start as u64) as usize;
-    let payload_start = global_brtd_payload_start + first_mip_relative_offset;
-    let payload_end = payload_start + total_texture_size;
-    let payload = global_bntx
-        .get(payload_start..payload_end)
-        .ok_or_else(|| std::io::Error::new(ErrorKind::UnexpectedEof, "texture payload out of bounds"))?;
-
-    let rlt_offset = align_up(brtd_offset_new + 0x10 + aligned_payload_size, 0x1000);
-    let file_size = rlt_offset + 0x90;
-    let mut out = vec![0u8; file_size];
-
-    out[0..8].copy_from_slice(b"BNTX\0\0\0\0");
-    write_u32_le_at(&mut out, 0x08, 0x0004_0000);
-    write_u16_le_at(&mut out, 0x0C, 0xFEFF);
-    out[0x0E] = 0x0C;
-    out[0x0F] = 0x40;
-    write_u32_le_at(&mut out, 0x10, (string_data_offset + 2) as u32);
-    write_u16_le_at(&mut out, 0x14, 0);
-    write_u16_le_at(&mut out, 0x16, string_section_offset as u16);
-    write_u32_le_at(&mut out, 0x18, rlt_offset as u32);
-    write_u32_le_at(&mut out, 0x1C, file_size as u32);
-
-    out[0x20..0x24].copy_from_slice(b"NX  ");
-    write_u32_le_at(&mut out, 0x24, 1);
-    write_u64_le_at(&mut out, 0x28, 0x198);
-    write_u64_le_at(&mut out, 0x30, brtd_offset_new as u64);
-    write_u64_le_at(&mut out, 0x38, dict_offset as u64);
-    write_u64_le_at(&mut out, 0x40, 0x58);
-    write_u64_le_at(&mut out, 0x48, 0);
-    write_u32_le_at(&mut out, 0x50, 0);
-
-    write_u64_le_at(&mut out, 0x198, brti_offset_new as u64);
-
-    out[string_section_offset..string_section_offset + 4].copy_from_slice(b"_STR");
-    write_u32_le_at(
-        &mut out,
-        string_section_offset + 0x04,
-        (brti_offset_new - string_section_offset) as u32,
-    );
-    write_u32_le_at(
-        &mut out,
-        string_section_offset + 0x08,
-        (brti_offset_new - string_section_offset) as u32,
-    );
-    write_u32_le_at(&mut out, string_section_offset + 0x10, 1);
-    write_u32_le_at(&mut out, string_section_offset + 0x14, string_data_offset as u32);
-    write_u16_le_at(&mut out, string_data_offset, texture_name.len() as u16);
-    out[string_data_offset + 2..string_data_offset + 2 + texture_name.len()]
-        .copy_from_slice(texture_name.as_bytes());
-
-    out[dict_offset..dict_offset + 4].copy_from_slice(b"_DIC");
-    write_u32_le_at(&mut out, dict_offset + 0x04, 1);
-    write_u32_le_at(&mut out, dict_offset + 0x08, u32::MAX);
-    write_u16_le_at(&mut out, dict_offset + 0x0C, 1);
-    write_u16_le_at(&mut out, dict_offset + 0x0E, 0);
-    write_u64_le_at(&mut out, dict_offset + 0x10, (string_data_offset - 4) as u64);
-    write_u32_le_at(&mut out, dict_offset + 0x18, dict_ref_bit);
-    write_u16_le_at(&mut out, dict_offset + 0x1C, 0);
-    out[dict_offset + 0x1E] = 1;
-    out[dict_offset + 0x1F] = 0;
-    write_u64_le_at(&mut out, dict_offset + 0x20, string_data_offset as u64);
-
-    out[brti_offset_new..brti_offset_new + brti_metadata_size]
-        .copy_from_slice(&global_bntx[brti_offset..brti_offset + brti_metadata_size]);
-    write_u32_le_at(&mut out, brti_offset_new + 0x04, brti_section_size as u32);
-    write_u32_le_at(&mut out, brti_offset_new + 0x08, brti_section_size as u32);
-    write_u64_le_at(&mut out, brti_offset_new + 0x60, string_data_offset as u64);
-    write_u64_le_at(&mut out, brti_offset_new + 0x68, 0x20);
-    write_u64_le_at(&mut out, brti_offset_new + 0x70, image_table_offset_new as u64);
-    write_u64_le_at(&mut out, brti_offset_new + 0x78, 0);
-    write_u64_le_at(&mut out, brti_offset_new + 0x80, runtime_block_1_offset as u64);
-    write_u64_le_at(&mut out, brti_offset_new + 0x88, runtime_block_2_offset as u64);
-    write_u64_le_at(&mut out, brti_offset_new + 0x90, 0);
-    write_u64_le_at(&mut out, brti_offset_new + 0x98, 0);
-
-    for (i, mip_offset) in mip_offsets.iter().enumerate() {
-        let relative = mip_offset.saturating_sub((global_brtd_offset + 0x10 + first_mip_relative_offset) as u64);
-        write_u64_le_at(
-            &mut out,
-            image_table_offset_new + i * 8,
-            brtd_offset_new as u64 + 0x10 + relative,
-        );
-    }
-
-    out[brtd_offset_new..brtd_offset_new + 4].copy_from_slice(b"BRTD");
-    write_u32_le_at(&mut out, brtd_offset_new + 0x04, 0);
-    write_u32_le_at(&mut out, brtd_offset_new + 0x08, (0x10 + aligned_payload_size) as u32);
-    out[brtd_offset_new + 0x10..brtd_offset_new + 0x10 + total_texture_size]
-        .copy_from_slice(payload);
-
-    out[rlt_offset..rlt_offset + 4].copy_from_slice(b"_RLT");
-    write_u32_le_at(&mut out, rlt_offset + 0x04, rlt_offset as u32);
-    write_u32_le_at(&mut out, rlt_offset + 0x08, 2);
-
-    write_u64_le_at(&mut out, rlt_offset + 0x10, 0);
-    write_u32_le_at(&mut out, rlt_offset + 0x18, 0);
-    write_u32_le_at(&mut out, rlt_offset + 0x1C, section1_size as u32);
-    write_u32_le_at(&mut out, rlt_offset + 0x20, 0);
-    write_u32_le_at(&mut out, rlt_offset + 0x24, 8);
-
-    write_u64_le_at(&mut out, rlt_offset + 0x28, 0);
-    write_u32_le_at(&mut out, rlt_offset + 0x30, brtd_offset_new as u32);
-    write_u32_le_at(&mut out, rlt_offset + 0x34, (0x10 + aligned_payload_size) as u32);
-    write_u32_le_at(&mut out, rlt_offset + 0x38, 8);
-    write_u32_le_at(&mut out, rlt_offset + 0x3C, 2);
-
-    write_rlt_entry(&mut out, rlt_offset + 0x40, 0x28, 2, 1, 1);
-    write_rlt_entry(&mut out, rlt_offset + 0x48, 0x40, 1, 1, 0);
-    write_rlt_entry(&mut out, rlt_offset + 0x50, 0x198, 1, 1, 0);
-    write_rlt_entry(&mut out, rlt_offset + 0x58, (dict_offset + 0x10) as u32, 2, 1, 1);
-    write_rlt_entry(&mut out, rlt_offset + 0x60, (brti_offset_new + 0x60) as u32, 1, 3, 0);
-    write_rlt_entry(&mut out, rlt_offset + 0x68, (brti_offset_new + 0x78) as u32, 1, 1, 0);
-    write_rlt_entry(&mut out, rlt_offset + 0x70, (brti_offset_new + 0x80) as u32, 1, 2, 0);
-    write_rlt_entry(&mut out, rlt_offset + 0x78, (brti_offset_new + 0x98) as u32, 1, 1, 0);
-    write_rlt_entry(&mut out, rlt_offset + 0x80, 0x30, 1, 1, 0);
-    write_rlt_entry(&mut out, rlt_offset + 0x88, image_table_offset_new as u32, 1, mip_count as u8, 0);
-
-    fs::write(output_path, out)
+    crate::bntx::export_single_texture(global_bntx, texture_index, texture_name, output_path)
 }
 
 #[derive(Serialize)]
@@ -532,20 +355,10 @@ impl Dumper {
         fs::write(namco_path, to_string_pretty(&json_export)?)?;
         println!("Exported NamcoFile.json");
 
-        let emitter_set_names: Vec<String> = namco
-            .entry_names
-            .iter()
-            .enumerate()
-            .filter(|(idx, _)| namco.entries[*idx].emitter_set_id != 0)
-            .map(|(_, name)| entry_name_to_emitter_set_name(name))
-            .collect();
-
-        let emitter_set_info = json!({"Order": emitter_set_names});
-        let set_info_path = Path::new(output_dir).join("EmitterSetInfo.txt");
-        fs::write(set_info_path, to_string_pretty(&emitter_set_info)?)?;
-        println!("Created EmitterSetInfo.txt");
-
         if let Some(ptcl) = &namco.ptcl_file {
+            if ptcl.emitter_list.emitter_sets.is_empty() {
+                println!("PTCL file has no emitter sets, skipping dump");
+            } else {
             println!(
                 "PTCL file is present with {} emitter sets",
                 ptcl.emitter_list.emitter_sets.len()
@@ -579,6 +392,7 @@ impl Dumper {
                 Self::dump_emitter_set(emitter_set, Path::new(output_dir), Some(ptcl), &set_name)?;
             }
             println!("Finished dumping all emitter sets");
+            }
         } else {
             println!("No PTCL file found, writing NAMCO emitter set names only");
             for (entry_idx, entry) in namco.entries.iter().enumerate() {
@@ -625,7 +439,7 @@ impl Dumper {
     }
 
     /// Reserialize the PTCL file to ensure consistent output
-    fn canonicalize_base_ptcl(raw_bytes: &[u8]) -> std::io::Result<Vec<u8>> {
+    pub(crate) fn canonicalize_base_ptcl(raw_bytes: &[u8]) -> std::io::Result<Vec<u8>> {
         let ptcl = PtclFile::load(raw_bytes)?;
         Ok(ptcl.save())
     }
@@ -902,32 +716,40 @@ impl Dumper {
         emitter_dir: &Path,
         ptcl: &PtclFile,
     ) -> std::io::Result<()> {
-        if let Some(primitive_info) = &ptcl.primitive_info {
-            // Export main primitive model if ID is valid
-            if emitter.data.particle_data.primitive_id != 0 {
-                let prim_id = emitter.data.particle_data.primitive_id;
-                if let Some(model_data) = find_primitive_data(primitive_info, ptcl, prim_id) {
-                    let filename = format!("{}.bfres", prim_id);
-                    fs::write(emitter_dir.join(&filename), model_data)?;
-                }
-            }
+        let Some(primitive_info) = &ptcl.primitive_info else {
+            return Ok(());
+        };
 
-            // Export extra primitive model if ID is valid
-            if emitter.data.particle_data.primitive_ex_id != 0 {
-                let prim_id = emitter.data.particle_data.primitive_ex_id;
-                if let Some(model_data) = find_primitive_data(primitive_info, ptcl, prim_id) {
-                    let filename = format!("{}.bfres", prim_id);
-                    fs::write(emitter_dir.join(&filename), model_data)?;
-                }
+        // Export main primitive model if ID is valid
+        if emitter.data.particle_data.primitive_id != 0
+            && emitter.data.particle_data.primitive_id != u64::MAX
+        {
+            let prim_id = emitter.data.particle_data.primitive_id;
+            if let Some(model_data) = find_primitive_data(primitive_info, prim_id) {
+                let filename = format!("{}.bfres", prim_id);
+                fs::write(emitter_dir.join(&filename), model_data)?;
             }
+        }
 
-            // Export volume primitive model if index is valid
-            if emitter.data.shape_info.primitive_index != 0 {
-                let prim_id = emitter.data.shape_info.primitive_index;
-                if let Some(model_data) = find_primitive_data(primitive_info, ptcl, prim_id) {
-                    let filename = format!("{}.bfres", prim_id);
-                    fs::write(emitter_dir.join(&filename), model_data)?;
-                }
+        // Export extra primitive model if ID is valid
+        if emitter.data.particle_data.primitive_ex_id != 0
+            && emitter.data.particle_data.primitive_ex_id != u64::MAX
+        {
+            let prim_id = emitter.data.particle_data.primitive_ex_id;
+            if let Some(model_data) = find_primitive_data(primitive_info, prim_id) {
+                let filename = format!("{}.bfres", prim_id);
+                fs::write(emitter_dir.join(&filename), model_data)?;
+            }
+        }
+
+        // Export volume primitive model if index is valid
+        if emitter.data.shape_info.primitive_index != 0
+            && emitter.data.shape_info.primitive_index != u64::MAX
+        {
+            let prim_id = emitter.data.shape_info.primitive_index;
+            if let Some(model_data) = find_primitive_data(primitive_info, prim_id) {
+                let filename = format!("{}.bfres", prim_id);
+                fs::write(emitter_dir.join(&filename), model_data)?;
             }
         }
 
@@ -1025,23 +847,17 @@ impl Dumper {
     }
 }
 
-/// Find primitive binary data by ID
-fn find_primitive_data(primitive_info: &crate::ptcl_file::PrimitiveInfo, ptcl: &PtclFile, id: u64) -> Option<Vec<u8>> {
-    // Guard against invalid IDs
-    if id == 0 || id == u64::MAX {
-        return None;
+/// Find primitive BFRES data by descriptor ID via the embedded G3PR ResFile.
+fn find_primitive_data(
+    primitive_info: &crate::ptcl_file::PrimitiveInfo,
+    id: u64,
+) -> Option<Vec<u8>> {
+    let model_index = crate::bfres::descriptor_index_for_id(&primitive_info.descriptors, id)?;
+    let source = primitive_info.binary_data.as_ref()?;
+    match crate::bfres::export_single_model(source, model_index) {
+        Ok(data) => Some(data),
+        Err(_) => None,
     }
-
-    // Find descriptor index matching the requested id
-    if let Some(idx) = primitive_info.descriptors.iter().position(|d| d.id == id) {
-        if let Some(primitives) = &ptcl.primitives {
-            if let Some(p) = primitives.get(idx) {
-                return p.binary_data.clone();
-            }
-        }
-    }
-
-    None
 }
 
 /// Create a minimal but valid BNSH (shader) file
@@ -1106,5 +922,14 @@ mod tests {
         for (input, expected) in cases {
             assert_eq!(entry_name_to_emitter_set_name(input), expected);
         }
+    }
+
+    #[test]
+    fn test_compute_single_entry_dict_ref_bit() {
+        use crate::bntx::compute_single_entry_dict_ref_bit;
+
+        assert_eq!(compute_single_entry_dict_ref_bit("ef_mario_localcoin00_nor"), 1);
+        assert_eq!(compute_single_entry_dict_ref_bit("ef_cmn_bomb_indirect00"), 4);
+        assert_eq!(compute_single_entry_dict_ref_bit("ef_cmn_cloud01"), 0);
     }
 }

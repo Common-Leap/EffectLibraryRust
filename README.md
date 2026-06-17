@@ -1,10 +1,35 @@
 # EffectLibraryRust
-A slopified rust crate for loading and saving particle effect files. Created expressly for use in my smash bros hitbox editor and effect veiwer. Only tested functionality is the decompilation of .effs into output files.
 
-## Usage (Standalone)
-Type whatever your run command is (ie: ./effect_dumper; cargo run effect_dumper) then type "dump <input eff location> <output folder>
+Rust library and CLI for loading and saving Nintendo Switch VFX effect files (`.eff`, `.ptcl`). Decompiles `.eff` archives into editable JSON/text assets and re-encodes them with byte-for-byte parity against the reference C# exporter.
 
-Credits
+## Build
 
-[EffectLibrary](https://github.com/KillzXGaming/EffectLibrary), which this implementation is based off of
-[eff_lib]( https://github.com/ultimate-research/eff_lib/tree/main), used for the original project
+```bash
+cd crate
+cargo build --release --bin effect_dumper
+```
+
+## Usage
+
+Dump an effect archive to a folder:
+
+```bash
+./target/release/effect_dumper dump /path/to/ef_mario.eff /path/to/output
+```
+
+## Verification
+
+Place game `.eff` files and a built [EffectLibrary](https://github.com/KillzXGaming/EffectLibrary) `EffectConverter` under `References/` (not committed). Then run the batch comparison script:
+
+```bash
+cd crate
+cargo build --release --bin effect_dumper
+python3 scripts/batch_eff_compare.py
+```
+
+The script compares Rust output against C# for every `.eff` under `References/effect/` and cleans up temp dirs when finished.
+
+## Credits
+
+- [EffectLibrary](https://github.com/KillzXGaming/EffectLibrary) — reference implementation this port is based on
+- [eff_lib](https://github.com/ultimate-research/eff_lib/tree/main) — original project

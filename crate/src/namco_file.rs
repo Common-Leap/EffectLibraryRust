@@ -51,12 +51,12 @@ pub struct JsonExportEntry {
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct JsonExportVariant {
+    #[serde(rename = "BoneName")]
+    pub bone_name: String,
     #[serde(rename = "StartFrame")]
     pub start_frame: u16,
     #[serde(rename = "EmitterSetID")]
     pub emitter_set_id: u16,
-    #[serde(rename = "BoneName")]
-    pub bone_name: String,
 }
 
 #[derive(Debug)]
@@ -161,17 +161,38 @@ impl NamcoEffectFile {
             external_bone_names.push(s);
         }
 
-        // Align to the PTCL chunk boundary.
-        let align = Self::get_required_chunk_align(
-            &entries,
-            &effect_variants,
-            &entry_names,
-            &external_model_names,
-            &external_bone_names,
-        );
+        // Seek to the embedded PTCL chunk using the stored align value when present.
         let pos = reader.seek(SeekFrom::Current(0))?;
-        let aligned = ((pos + align as u64 - 1) / align as u64) * align as u64;
-        reader.seek(SeekFrom::Start(aligned))?;
+        let file_len = reader.seek(SeekFrom::End(0))?;
+        reader.seek(SeekFrom::Start(pos))?;
+
+        let ptcl_offset = if header.header_chunk_align > 0 {
+            header.header_chunk_align as u64 * 0x1000
+        } else {
+            let align = Self::get_required_chunk_align(
+                &entries,
+                &effect_variants,
+                &entry_names,
+                &external_model_names,
+                &external_bone_names,
+            ) as u64;
+            ((pos + align - 1) / align) * align
+        };
+
+        if ptcl_offset >= file_len {
+            return Ok(NamcoEffectFile {
+                header,
+                entries,
+                effect_variants,
+                effect_models,
+                entry_names,
+                external_model_names,
+                external_bone_names,
+                ptcl_file: None,
+            });
+        }
+
+        reader.seek(SeekFrom::Start(ptcl_offset))?;
 
         // Check if we're at EOF
         let mut test_buf = [0u8; 1];
@@ -279,7 +300,6 @@ impl NamcoEffectFile {
                     json_entry.external_model_string =
                         self.external_model_names[model_idx as usize].clone();
                 }
-                json_entry.external_model_id = model_idx as u32;
             }
 
             let start_idx = (entry.variant_start_idx as i32) - 1;

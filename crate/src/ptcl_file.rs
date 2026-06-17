@@ -3,7 +3,6 @@ use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
 use crate::emitter::{EmitterAnimation, EmitterData};
 use crate::enums::Version;
-use crate::bnsh;
 use crate::reader::ReaderExt;
 use crate::structs::{
     Eft1Texture, Eft2Texture, Emitter, EmitterList, EmitterSet, EmitterSubSection, FtexTexture,
@@ -68,6 +67,8 @@ pub struct TextureInfo {
     pub descriptors: Vec<TextureDescriptor>,
     pub binary_data: Option<Vec<u8>>,
     pub section_offset: u64,
+    #[serde(skip)]
+    pub desc_table_magic: [u8; 4],
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -97,6 +98,8 @@ pub struct PrimitiveInfo {
     pub descriptors: Vec<PrimitiveDescriptor>,
     pub binary_data: Option<Vec<u8>>,
     pub section_offset: u64,
+    #[serde(skip)]
+    pub desc_table_magic: [u8; 4],
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -206,9 +209,76 @@ fn write_u16_at(output: &mut [u8], offset: usize, value: u16) {
     output[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
 }
 
+fn desc_table_magic_bytes(magic: &str) -> io::Result<[u8; 4]> {
+    if magic == "GTNT" || magic == "G3NT" {
+        Ok(magic.as_bytes().try_into().expect("four-byte magic"))
+    } else if magic.is_empty() {
+        Ok([0; 4])
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("unexpected descriptor table magic {magic:?}"),
+        ))
+    }
+}
+
+fn empty_desc_table_magic() -> [u8; 4] {
+    [0; 4]
+}
+
+fn desc_table_magic_for_export(descriptors_empty: bool, stored: [u8; 4]) -> [u8; 4] {
+    if descriptors_empty {
+        empty_desc_table_magic()
+    } else {
+        stored
+    }
+}
+
+/// Match C# `OrderBy(x => x.Name)` / `OrderTextures()` (en-US culture rules for ASCII names).
+fn csharp_descriptor_name_order(left: &str, right: &str) -> std::cmp::Ordering {
+    fn char_class(ch: char) -> u8 {
+        if ch.is_ascii_digit() {
+            1
+        } else if ch.is_ascii_alphabetic() {
+            2
+        } else {
+            0
+        }
+    }
+
+    let mut left_chars = left.chars();
+    let mut right_chars = right.chars();
+    loop {
+        match (left_chars.next(), right_chars.next()) {
+            (None, None) => return std::cmp::Ordering::Equal,
+            (None, Some(_)) => return std::cmp::Ordering::Less,
+            (Some(_), None) => return std::cmp::Ordering::Greater,
+            (Some(left_ch), Some(right_ch)) => {
+                let class_cmp = char_class(left_ch).cmp(&char_class(right_ch));
+                if class_cmp != std::cmp::Ordering::Equal {
+                    return class_cmp;
+                }
+                let lower_cmp = left_ch
+                    .to_ascii_lowercase()
+                    .cmp(&right_ch.to_ascii_lowercase());
+                if lower_cmp != std::cmp::Ordering::Equal {
+                    return lower_cmp;
+                }
+                if left_ch != right_ch {
+                    return left_ch.cmp(&right_ch);
+                }
+            }
+        }
+    }
+}
+
 fn write_section_header(output: &mut Vec<u8>, magic: &str) -> usize {
+    write_section_header_magic(output, magic.as_bytes().try_into().expect("four-byte magic"))
+}
+
+fn write_section_header_magic(output: &mut Vec<u8>, magic: [u8; 4]) -> usize {
     let start = output.len();
-    output.extend_from_slice(magic.as_bytes());
+    output.extend_from_slice(&magic);
     output.extend_from_slice(&0u32.to_le_bytes());
     output.extend_from_slice(&NONE_U32.to_le_bytes());
     output.extend_from_slice(&NONE_U32.to_le_bytes());
@@ -285,13 +355,11 @@ fn write_primitive_desc_binary(descriptors: &[PrimitiveDescriptor]) -> Vec<u8> {
 fn parse_texture_desc_table<R: Read + Seek>(
     reader: &mut R,
     ptcl_header: &BinaryHeader,
-) -> io::Result<Vec<TextureDescriptor>> {
+) -> io::Result<(Vec<TextureDescriptor>, [u8; 4])> {
     let (header, start) = SectionHeader::read(reader)?;
-    if header.magic != "GTNT" {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "expected GTNT"));
-    }
+    let desc_table_magic = desc_table_magic_bytes(&header.magic)?;
     if header.binary_offset == NONE_U32 {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), empty_desc_table_magic()));
     }
 
     let mut descriptors = Vec::new();
@@ -311,16 +379,14 @@ fn parse_texture_desc_table<R: Read + Seek>(
     }
 
     let _ = ptcl_header;
-    Ok(descriptors)
+    Ok((descriptors, desc_table_magic))
 }
 
-fn parse_primitive_desc_table<R: Read + Seek>(reader: &mut R) -> io::Result<Vec<PrimitiveDescriptor>> {
+fn parse_primitive_desc_table<R: Read + Seek>(reader: &mut R) -> io::Result<(Vec<PrimitiveDescriptor>, [u8; 4])> {
     let (header, start) = SectionHeader::read(reader)?;
-    if header.magic != "G3NT" {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "expected G3NT"));
-    }
+    let desc_table_magic = desc_table_magic_bytes(&header.magic)?;
     if header.binary_offset == NONE_U32 {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), empty_desc_table_magic()));
     }
 
     let mut descriptors = Vec::new();
@@ -353,7 +419,7 @@ fn parse_primitive_desc_table<R: Read + Seek>(reader: &mut R) -> io::Result<Vec<
         }
         reader.seek(SeekFrom::Start(entry_start + next_offset as u64))?;
     }
-    Ok(descriptors)
+    Ok((descriptors, desc_table_magic))
 }
 
 fn parse_texture_info<R: Read + Seek>(
@@ -362,11 +428,11 @@ fn parse_texture_info<R: Read + Seek>(
     section_start: u64,
     ptcl_header: &BinaryHeader,
 ) -> io::Result<TextureInfo> {
-    let descriptors = if header.children_offset != NONE_U32 {
+    let (descriptors, desc_table_magic) = if header.children_offset != NONE_U32 {
         reader.seek(SeekFrom::Start(section_start + header.children_offset as u64))?;
         parse_texture_desc_table(reader, ptcl_header)?
     } else {
-        Vec::new()
+        (Vec::new(), *b"GTNT")
     };
 
     let binary_data = if header.binary_offset != NONE_U32 && header.size > 0 {
@@ -380,6 +446,7 @@ fn parse_texture_info<R: Read + Seek>(
         descriptors,
         binary_data,
         section_offset: section_start,
+        desc_table_magic,
     })
 }
 
@@ -426,11 +493,15 @@ fn parse_primitive_info<R: Read + Seek>(
     header: &SectionHeader,
     section_start: u64,
 ) -> io::Result<PrimitiveInfo> {
-    let descriptors = if header.children_offset != NONE_U32 {
+    let (descriptors, desc_table_magic) = if header.children_offset != NONE_U32 {
         reader.seek(SeekFrom::Start(section_start + header.children_offset as u64))?;
         parse_primitive_desc_table(reader)?
+    } else if header.children_count >= 1 {
+        // C# skips PrimDescTable.Read when ChildrenOffset is unset but still writes an
+        // empty descriptor child with zero magic on export.
+        (Vec::new(), [0, 0, 0, 0])
     } else {
-        Vec::new()
+        (Vec::new(), *b"G3NT")
     };
 
     let binary_data = if header.binary_offset != NONE_U32 && header.size > 0 {
@@ -444,6 +515,7 @@ fn parse_primitive_info<R: Read + Seek>(
         descriptors,
         binary_data,
         section_offset: section_start,
+        desc_table_magic,
     })
 }
 
@@ -666,7 +738,7 @@ fn serialize_emitter(output: &mut Vec<u8>, emitter: &Emitter, is_last: bool) -> 
     }
 
     if !emitter.subsections.is_empty() {
-        align_vec(output, 4, 0);
+        align_vec(output, 8, 0);
         let attr_start = output.len();
         patch_attr_offset(output, start, attr_start);
         for (idx, subsection) in emitter.subsections.iter().enumerate() {
@@ -678,7 +750,7 @@ fn serialize_emitter(output: &mut Vec<u8>, emitter: &Emitter, is_last: bool) -> 
     patch_section_size(output, start, section_size);
 
     if !emitter.children.is_empty() {
-        align_vec(output, 4, 0);
+        align_vec(output, 8, 0);
         let child_start = output.len();
         patch_child_offset(output, start, child_start);
         for (idx, child) in emitter.children.iter().enumerate() {
@@ -764,8 +836,14 @@ fn serialize_texture_info_section(output: &mut Vec<u8>, texture_info: &TextureIn
     let child_start = output.len();
     patch_child_offset(output, start, child_start);
 
-    let gtnt_start = write_section_header(output, "GTNT");
-    let gtnt_binary = write_texture_desc_binary(&texture_info.descriptors);
+    let mut descriptors: Vec<TextureDescriptor> = texture_info.descriptors.clone();
+    descriptors.sort_by(|left, right| csharp_descriptor_name_order(&left.name, &right.name));
+
+    let gtnt_start = write_section_header_magic(
+        output,
+        desc_table_magic_for_export(texture_info.descriptors.is_empty(), texture_info.desc_table_magic),
+    );
+    let gtnt_binary = write_texture_desc_binary(&descriptors);
     patch_section_size(output, gtnt_start, gtnt_binary.len() as u32);
     let gtnt_binary_start = output.len();
     patch_binary_offset(output, gtnt_start, gtnt_binary_start);
@@ -776,11 +854,14 @@ fn serialize_texture_info_section(output: &mut Vec<u8>, texture_info: &TextureIn
 
     if let Some(binary_data) = &texture_info.binary_data {
         if !binary_data.is_empty() {
+            let texture_names: Vec<String> = descriptors.iter().map(|d| d.name.clone()).collect();
+            let canonical = crate::bntx::reorder_and_save(binary_data, &texture_names)
+                .unwrap_or_else(|_| binary_data.clone());
             align_vec(output, 4096, 0);
             let binary_start = output.len();
             patch_binary_offset(output, start, binary_start);
-            patch_section_size(output, start, binary_data.len() as u32);
-            output.extend_from_slice(binary_data);
+            patch_section_size(output, start, canonical.len() as u32);
+            output.extend_from_slice(&canonical);
         }
     }
 
@@ -826,10 +907,12 @@ fn serialize_primitive_info_section(output: &mut Vec<u8>, primitive_info: &Primi
     let child_start = output.len();
     patch_child_offset(output, start, child_start);
 
-    let g3nt_start = write_section_header(output, "G3NT");
+    let g3nt_start = write_section_header_magic(
+        output,
+        desc_table_magic_for_export(primitive_info.descriptors.is_empty(), primitive_info.desc_table_magic),
+    );
     let g3nt_binary = write_primitive_desc_binary(&primitive_info.descriptors);
     patch_section_size(output, g3nt_start, g3nt_binary.len() as u32);
-    patch_next_offset(output, g3nt_start, Some(g3nt_start + SECTION_HEADER_SIZE + g3nt_binary.len() + ((16 - ((SECTION_HEADER_SIZE + g3nt_binary.len()) % 16)) % 16)));
     let g3nt_binary_start = output.len();
     patch_binary_offset(output, g3nt_start, g3nt_binary_start);
     output.extend_from_slice(&g3nt_binary);
@@ -839,11 +922,13 @@ fn serialize_primitive_info_section(output: &mut Vec<u8>, primitive_info: &Primi
 
     if let Some(binary_data) = &primitive_info.binary_data {
         if !binary_data.is_empty() {
+            let canonical = crate::bfres::ResFile::canonicalize(binary_data)
+                .unwrap_or_else(|_| binary_data.clone());
             align_vec(output, 4096, 0);
             let binary_start = output.len();
             patch_binary_offset(output, start, binary_start);
-            patch_section_size(output, start, binary_data.len() as u32);
-            output.extend_from_slice(binary_data);
+            patch_section_size(output, start, canonical.len() as u32);
+            output.extend_from_slice(&canonical);
         }
     }
 
@@ -854,42 +939,34 @@ fn serialize_primitive_info_section(output: &mut Vec<u8>, primitive_info: &Primi
 
 fn serialize_shader_info_section(output: &mut Vec<u8>, shader_info: &ShaderInfo, is_last: bool) -> usize {
     let start = write_section_header(output, "GRSN");
-    let canonical_compute = shader_info
-        .compute_binary
-        .as_ref()
-        .map(|bytes| bnsh::canonicalize(bytes).unwrap_or_else(|_| bytes.clone()));
-    let canonical_main = shader_info
-        .binary_data
-        .as_ref()
-        .map(|bytes| bnsh::canonicalize(bytes).unwrap_or_else(|_| bytes.clone()));
     let mut grsc_start = None;
 
-    if canonical_compute.is_some() {
+    if shader_info.compute_binary.is_some() {
         let child_start = output.len();
         patch_child_offset(output, start, child_start);
         let section_start = write_section_header(output, "GRSC");
         grsc_start = Some(section_start);
-        if let Some(compute_binary) = &canonical_compute {
-            patch_section_size(output, section_start, compute_binary.len() as u32);
-            patch_next_offset(output, section_start, None);
-        }
+        patch_next_offset(output, section_start, None);
     }
 
-    if let Some(binary_data) = &canonical_main {
+    if let Some(binary_data) = &shader_info.binary_data {
         if !binary_data.is_empty() {
+            let canonical = crate::bnsh::canonicalize(binary_data).unwrap_or_else(|_| binary_data.clone());
             align_vec(output, 4096, 0);
             let binary_start = output.len();
             patch_binary_offset(output, start, binary_start);
-            patch_section_size(output, start, binary_data.len() as u32);
-            output.extend_from_slice(binary_data);
+            patch_section_size(output, start, canonical.len() as u32);
+            output.extend_from_slice(&canonical);
         }
     }
 
-    if let (Some(section_start), Some(compute_binary)) = (grsc_start, canonical_compute.as_ref()) {
+    if let (Some(section_start), Some(compute_binary)) = (grsc_start, shader_info.compute_binary.as_ref()) {
+        let canonical = crate::bnsh::canonicalize(compute_binary).unwrap_or_else(|_| compute_binary.clone());
         align_vec(output, 4096, 0);
         let binary_start = output.len();
         patch_binary_offset(output, section_start, binary_start);
-        output.extend_from_slice(compute_binary);
+        patch_section_size(output, section_start, canonical.len() as u32);
+        output.extend_from_slice(&canonical);
     }
     let next_start = (!is_last).then_some(output.len());
     patch_next_offset(output, start, next_start);
@@ -962,7 +1039,7 @@ impl PtclFile {
             .filter_map(|(idx, section)| match section {
                 TopLevelSection::EmitterList if !self.emitter_list.emitter_sets.is_empty() => Some(idx),
                 TopLevelSection::TextureInfo if self.texture_info.is_some() => Some(idx),
-                TopLevelSection::PrimitiveList if !self.primitive_list_sections.is_empty() => Some(idx),
+                TopLevelSection::PrimitiveList => Some(idx),
                 TopLevelSection::PrimitiveInfo if self.primitive_info.is_some() => Some(idx),
                 TopLevelSection::ShaderInfo if self.shader_info.is_some() => Some(idx),
                 TopLevelSection::Raw(bytes) if !bytes.is_empty() => Some(idx),
@@ -1160,6 +1237,152 @@ impl PtclFile {
 mod tests {
     use super::PtclFile;
     use std::fs;
+    use std::path::Path;
+
+    #[test]
+    fn ef_fox_base_ptcl_pure_rust_save() {
+        let eff_path = "/home/leap/Workshop/EffectLibraryRust/References/effect/fighter/fox/ef_fox.eff";
+        let csharp_path = "/tmp/ef_fox_csharp/ef_fox/Base.ptcl";
+        if !Path::new(csharp_path).exists() {
+            return;
+        }
+        let eff = fs::read(eff_path).expect("read eff");
+        let namco = crate::namco_file::NamcoEffectFile::load(&eff).expect("load namco");
+        let ptcl = namco.ptcl_file.as_ref().expect("ptcl");
+        let loaded = PtclFile::load(&ptcl.base_bytes).expect("parse ptcl");
+        let rust_saved = loaded.save();
+        let expected = fs::read(csharp_path).expect("read csharp ptcl");
+        assert_eq!(rust_saved, expected, "ef_fox Base.ptcl must match C# byte-for-byte");
+    }
+
+    #[test]
+    fn ef_mario_base_ptcl_pure_rust_save() {
+        let eff_path = "/home/leap/Workshop/EffectLibraryRust/References/effect/fighter/mario/ef_mario.eff";
+        let csharp_path = "/tmp/ef_mario_csharp/ef_mario/Base.ptcl";
+        if !Path::new(csharp_path).exists() {
+            return;
+        }
+        let eff = fs::read(eff_path).expect("read eff");
+        let namco = crate::namco_file::NamcoEffectFile::load(&eff).expect("load namco");
+        let ptcl = namco.ptcl_file.as_ref().expect("ptcl");
+        let loaded = PtclFile::load(&ptcl.base_bytes).expect("parse ptcl");
+        let rust_saved = loaded.save();
+        let expected = fs::read(csharp_path).expect("read csharp ptcl");
+        if rust_saved == expected {
+            eprintln!("Base.ptcl: exact match ({} bytes)", rust_saved.len());
+            return;
+        }
+        eprintln!(
+            "Base.ptcl delta: rust={} csharp={} diff={}",
+            rust_saved.len(),
+            expected.len(),
+            rust_saved.len() as i64 - expected.len() as i64
+        );
+        for i in 0..rust_saved.len().min(expected.len()) {
+            if rust_saved[i] != expected[i] {
+                eprintln!("first diff at 0x{i:x}: rust={:02x} csharp={:02x}", rust_saved[i], expected[i]);
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn ef_mario_base_ptcl_matches_csharp_when_canonicalizing() {
+        let eff_path = "/home/leap/Workshop/EffectLibraryRust/References/effect/fighter/mario/ef_mario.eff";
+        let csharp_path = "/tmp/ef_mario_csharp/ef_mario/Base.ptcl";
+        if !Path::new(csharp_path).exists() {
+            return;
+        }
+        let eff = fs::read(eff_path).expect("read eff");
+        let namco = crate::namco_file::NamcoEffectFile::load(&eff).expect("load namco");
+        let ptcl = namco.ptcl_file.as_ref().expect("ptcl");
+        let canonical = crate::dumper::Dumper::canonicalize_base_ptcl(&ptcl.base_bytes).expect("canonical");
+        let expected = fs::read(csharp_path).expect("read csharp ptcl");
+        assert_eq!(canonical, expected);
+    }
+
+    #[test]
+    fn csharp_descriptor_name_order_matches_culture_sort() {
+        assert_eq!(
+            super::csharp_descriptor_name_order("ef_cmn_fire05", "ef_cmn_fire_indirect01"),
+            std::cmp::Ordering::Greater,
+        );
+        assert_eq!(
+            super::csharp_descriptor_name_order("ef_cmn_fire_indirect01", "ef_cmn_fire05"),
+            std::cmp::Ordering::Less,
+        );
+    }
+
+    #[test]
+    fn ef_standard_base_ptcl_matches_csharp_dump() {
+        let eff_path = "/home/leap/Workshop/EffectLibraryRust/References/effect/ui/standard/ef_standard.eff";
+        let csharp_path = "/home/leap/Workshop/EffectLibraryRust/ef_standard/Base.ptcl";
+        if !Path::new(csharp_path).exists() {
+            return;
+        }
+        let eff = fs::read(eff_path).expect("read eff");
+        let namco = crate::namco_file::NamcoEffectFile::load(&eff).expect("load namco");
+        let ptcl = namco.ptcl_file.as_ref().expect("ptcl");
+        let loaded = PtclFile::load(&ptcl.base_bytes).expect("parse ptcl");
+        let rust_saved = loaded.save();
+        let expected = fs::read(csharp_path).expect("read csharp ptcl");
+        assert_eq!(rust_saved, expected, "ef_standard Base.ptcl must match C# byte-for-byte");
+    }
+
+    #[test]
+    fn ef_zelda_base_ptcl_matches_csharp_dump() {
+        let eff_path = "/home/leap/Workshop/EffectLibraryRust/References/effect/fighter/zelda/ef_zelda.eff";
+        let csharp_path =
+            "/home/leap/Workshop/EffectLibraryRust/crate/.batch_verify_fix/cs/ef_zelda/ef_zelda/Base.ptcl";
+        if !Path::new(csharp_path).exists() {
+            return;
+        }
+        let eff = fs::read(eff_path).expect("read eff");
+        let namco = crate::namco_file::NamcoEffectFile::load(&eff).expect("load namco");
+        let ptcl = namco.ptcl_file.as_ref().expect("ptcl");
+        let loaded = PtclFile::load(&ptcl.base_bytes).expect("parse ptcl");
+        let rust_saved = loaded.save();
+        let expected = fs::read(csharp_path).expect("read csharp ptcl");
+        assert_eq!(rust_saved, expected, "ef_zelda Base.ptcl must match C# byte-for-byte");
+    }
+
+    #[test]
+    fn ef_common_base_ptcl_matches_csharp_dump() {
+        let eff_path = "/home/leap/Workshop/EffectLibraryRust/References/effect/system/common/ef_common.eff";
+        let csharp_path =
+            "/home/leap/Workshop/EffectLibraryRust/crate/.batch_verify_fix/cs/ef_common/ef_common/Base.ptcl";
+        if !Path::new(csharp_path).exists() {
+            return;
+        }
+        let eff = fs::read(eff_path).expect("read eff");
+        let namco = crate::namco_file::NamcoEffectFile::load(&eff).expect("load namco");
+        let ptcl = namco.ptcl_file.as_ref().expect("ptcl");
+        let loaded = PtclFile::load(&ptcl.base_bytes).expect("parse ptcl");
+        let rust_saved = loaded.save();
+        let expected = fs::read(csharp_path).expect("read csharp ptcl");
+        assert_eq!(rust_saved, expected, "ef_common Base.ptcl must match C# byte-for-byte");
+    }
+
+    #[test]
+    fn ef_animal_city_empty_g3nt_magic_roundtrip() {
+        let eff_path = "/home/leap/Workshop/EffectLibraryRust/References/effect/stage/animal_city/ef_animal_city.eff";
+        let csharp_path = "/home/leap/Workshop/EffectLibraryRust/ef_animal_city/Base.ptcl";
+        if !Path::new(csharp_path).exists() {
+            return;
+        }
+        let eff = fs::read(eff_path).expect("read eff");
+        let namco = crate::namco_file::NamcoEffectFile::load(&eff).expect("load namco");
+        let ptcl = namco.ptcl_file.as_ref().expect("ptcl");
+        let loaded = PtclFile::load(&ptcl.base_bytes).expect("parse ptcl");
+        let primitive_info = loaded.primitive_info.as_ref().expect("primitive_info");
+        assert_eq!(
+            primitive_info.desc_table_magic, [0, 0, 0, 0],
+            "empty G3NT tables keep zero magic from source"
+        );
+        let rust_saved = loaded.save();
+        let expected = fs::read(csharp_path).expect("read csharp ptcl");
+        assert_eq!(rust_saved, expected, "ef_animal_city Base.ptcl must match C# byte-for-byte");
+    }
 
     #[test]
     fn base_ptcl_matches_csharp_canonical_output() {

@@ -1,4 +1,5 @@
 pub mod bfres;
+pub mod bntx;
 pub mod bnsh;
 pub mod creator;
 pub mod dumper;
@@ -20,5 +21,5 @@ pub use reader::ReaderExt;
 pub use structs::*;
 
 pub use crate::emitter::BnshFile;
-pub use crate::bfres::BfresFile;
+pub use crate::bfres::{BfresFile, ResFile};
 pub use crate::ptcl_file::ShaderVariation;
