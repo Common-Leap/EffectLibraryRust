@@ -8,7 +8,7 @@ license = "MIT"
 authors = ["Common Leap"]
 repository = "https://github.com/Common-Leap/EffectLibraryRust"
 homepage = "https://github.com/Common-Leap/EffectLibraryRust"
-keywords = ["nintendo", "switch", "vfx", "eff", "ptcl", "bfres"]
+keywords = ["nintendo", "switch", "vfx", "eff", "ptcl"]
 categories = ["parser-implementations", "game-development"]
 exclude = ["scripts/**", "target/**"]
 
