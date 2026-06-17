@@ -214,26 +214,8 @@ impl NamcoEffectFile {
 
         // Read PTCL file
         let mut ptcl_data = Vec::new();
-        let bytes_read = reader.read_to_end(&mut ptcl_data)?;
-        println!("Read {} bytes for PTCL data", bytes_read);
-        println!("PTCL data size: {} bytes", ptcl_data.len());
-        if ptcl_data.len() >= 4 {
-            let magic = String::from_utf8_lossy(&ptcl_data[0..4]);
-            println!("PTCL magic: {}", magic);
-        }
-        let ptcl_file = match PtclFile::load(&ptcl_data) {
-            Ok(ptcl) => {
-                println!(
-                    "Successfully loaded PTCL file with {} bytes",
-                    ptcl_data.len()
-                );
-                Some(ptcl)
-            }
-            Err(e) => {
-                println!("Failed to load PTCL file: {}", e);
-                None
-            }
-        };
+        reader.read_to_end(&mut ptcl_data)?;
+        let ptcl_file = PtclFile::load(&ptcl_data).ok();
 
         Ok(NamcoEffectFile {
             header,

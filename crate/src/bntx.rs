@@ -1,10 +1,9 @@
 //! BNTX (NW Switch texture archive) load/save matching Syroot.NintenTools.NSW.Bntx.
 
 use std::collections::HashMap;
-use std::io::{self, Cursor, ErrorKind, Read, Seek, SeekFrom, Write};
+use std::io::{self, ErrorKind};
 use std::path::Path;
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use num_bigint::BigUint;
 
 const SECTION1: usize = 0;
@@ -41,7 +40,7 @@ pub fn export_single_texture(
     std::fs::write(output_path, out)
 }
 
-fn build_single_texture_bntx(
+pub(crate) fn build_single_texture_bntx(
     global_bntx: &[u8],
     texture_index: usize,
     texture_name: &str,
@@ -275,16 +274,6 @@ struct BntxFile {
     target: [u8; 4],
     textures: Vec<Texture>,
     string_table_order: Vec<String>,
-}
-
-impl BntxFile {
-    fn version_major2(&self) -> u32 {
-        (self.version >> 16) & 0xFF
-    }
-
-    fn version_minor(&self) -> u32 {
-        (self.version >> 8) & 0xFF
-    }
 }
 
 impl BntxFile {
@@ -653,10 +642,6 @@ impl BinWriter {
         self.output
     }
 
-    fn truncate(&mut self, len: usize) {
-        self.output.truncate(len);
-    }
-
     fn write_u8(&mut self, value: u8) {
         self.output.push(value);
     }
@@ -910,21 +895,6 @@ impl StringTable {
         self.sorted_keys = sorted;
     }
 
-    fn ordered_keys(&self) -> Vec<&str> {
-        let mut keys: Vec<&str> = self
-            .sorted_keys
-            .iter()
-            .map(String::as_str)
-            .filter(|key| !key.is_empty())
-            .collect();
-        for key in self.strings.keys() {
-            if !keys.iter().any(|existing| existing == key) {
-                keys.push(key);
-            }
-        }
-        keys
-    }
-
     fn pool_keys(&self) -> Vec<String> {
         let mut keys = self.sorted_keys.clone();
         for key in self.strings.keys() {
@@ -1151,7 +1121,7 @@ fn search_node(tree_nodes: &[DictTreeNode], data: &BigUint, previous: bool) -> u
         return 0;
     }
     let mut node = tree_nodes[0].child[0];
-    let mut last = node;
+    let mut last;
     loop {
         last = node;
         let bit = bit_at(data, tree_nodes[node].bit_index);
@@ -1313,67 +1283,5 @@ mod tests {
         assert_eq!(compute_single_entry_dict_ref_bit("ef_mario_localcoin00_nor"), 1);
         assert_eq!(compute_single_entry_dict_ref_bit("ef_cmn_bomb_indirect00"), 4);
         assert_eq!(compute_single_entry_dict_ref_bit("ef_cmn_cloud01"), 0);
-    }
-
-    #[test]
-    fn load_bomb_texture_metadata() {
-        let eff_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../References/effect/fighter/mario/ef_mario.eff");
-        if !eff_path.exists() {
-            return;
-        }
-        let eff = std::fs::read(&eff_path).expect("read eff");
-        let start = eff.windows(4).position(|w| w == b"BNTX").unwrap();
-        let size = u32::from_le_bytes(eff[start + 0x1C..start + 0x20].try_into().unwrap()) as usize;
-        let bntx = &eff[start..start + size];
-        let file = BntxFile::read(bntx).expect("read");
-        let tex = file
-            .textures
-            .iter()
-            .find(|tex| tex.name == "ef_cmn_bomb_indirect00")
-            .expect("texture");
-        assert_eq!(tex.mip_count, 8);
-        assert_eq!(tex.brti_header.len(), 0xA0);
-    }
-
-    #[test]
-    fn resaved_bntx_matches_csharp_for_ef_mario() {
-        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let csharp_path = manifest.join("../References/Labled Outputs/C_Sharp_Exporter_Output/Base.ptcl");
-        let eff_path = manifest.join("../References/effect/fighter/mario/ef_mario.eff");
-        if !csharp_path.exists() || !eff_path.exists() {
-            return;
-        }
-        let csharp = std::fs::read(&csharp_path).expect("csharp ptcl");
-        let cstart = csharp.windows(4).position(|w| w == b"BNTX").unwrap();
-        let csize = u32::from_le_bytes(csharp[cstart + 0x1C..cstart + 0x20].try_into().unwrap()) as usize;
-        let expected = &csharp[cstart..cstart + csize];
-
-        let eff = std::fs::read(&eff_path).expect("eff");
-        let start = eff.windows(4).position(|w| w == b"BNTX").unwrap();
-        let size = u32::from_le_bytes(eff[start + 0x1C..start + 0x20].try_into().unwrap()) as usize;
-        let input = &eff[start..start + size];
-        let file = BntxFile::read(input).expect("read");
-        let order: Vec<String> = file
-            .textures
-            .iter()
-            .map(|tex| tex.name.clone())
-            .collect();
-        let mut sorted = order.clone();
-        sorted.sort();
-        let resaved = reorder_and_save(input, &sorted).expect("save");
-        assert_eq!(
-            resaved.len(),
-            expected.len(),
-            "file size mismatch: rust={} csharp={}",
-            resaved.len(),
-            expected.len()
-        );
-        let diffs = resaved
-            .iter()
-            .zip(expected.iter())
-            .filter(|(left, right)| left != right)
-            .count();
-        assert_eq!(diffs, 0, "{diffs} byte differences remain");
     }
 }

@@ -2,6 +2,8 @@
 
 Rust library and CLI for loading and saving Nintendo Switch VFX effect files (`.eff`, `.ptcl`). Decompiles `.eff` archives into editable JSON/text assets and re-encodes them with byte-for-byte parity against the reference C# exporter.
 
+**Crates.io:** [`effect_library`](https://crates.io/crates/effect_library) **`1.0.1`**
+
 ## Build
 
 ```bash
@@ -30,7 +32,7 @@ Add a dependency from [crates.io](https://crates.io/crates/effect_library):
 
 ```toml
 [dependencies]
-effect_library = "1.0"
+effect_library = "1.0.1"
 ```
 
 Or use a path/git checkout if you are hacking on this repo:
@@ -111,15 +113,17 @@ let bnsh_bytes = bnsh::canonicalize(&shader_bytes)?;
 
 ## Verification
 
-Place game `.eff` files and a built [EffectLibrary](https://github.com/KillzXGaming/EffectLibrary) `EffectConverter` under `References/` (not committed). Then run the batch comparison script:
+Comparison scripts under `crate/scripts/` download and build reference tools automatically (crates.io `effect_library` **1.0.0** as a regression baseline, Joob's C# fork, and the local **1.0.1** build). Game `.eff` files cannot be downloaded automatically; the setup step symlinks `References/effect/` from a known local export path or from `$EFFECT_REFERENCE_PATH` when set.
 
 ```bash
 cd crate
-cargo build --release --bin effect_dumper
-python3 scripts/batch_eff_compare.py
+python3 scripts/compare_setup.py --all   # optional: prefetch everything
+python3 scripts/batch_eff_compare.py     # C# vs 1.0.1 (accuracy)
+python3 scripts/compare_published_vs_optimized.py  # 1.0.0 vs 1.0.1
+python3 scripts/speedtest_csharp_rust.py
 ```
 
-The script compares Rust output against C# for every `.eff` under `References/effect/` and cleans up temp dirs when finished.
+Each script calls setup on startup, compares every `.eff` under `References/effect/`, writes temp output to `References/tmp/`, and deletes it when finished.
 
 ## Credits
 

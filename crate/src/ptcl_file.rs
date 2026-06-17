@@ -37,8 +37,11 @@ struct SectionHeader {
     next_section_offset: u32,
     attr_offset: u32,
     binary_offset: u32,
+    #[allow(dead_code)]
     padding: u32,
+    #[allow(dead_code)]
     children_count: u16,
+    #[allow(dead_code)]
     unknown: u16,
 }
 
@@ -1235,72 +1238,6 @@ impl PtclFile {
 
 #[cfg(test)]
 mod tests {
-    use super::PtclFile;
-    use std::fs;
-    use std::path::Path;
-
-    #[test]
-    fn ef_fox_base_ptcl_pure_rust_save() {
-        let eff_path = "/home/leap/Workshop/EffectLibraryRust/References/effect/fighter/fox/ef_fox.eff";
-        let csharp_path = "/tmp/ef_fox_csharp/ef_fox/Base.ptcl";
-        if !Path::new(csharp_path).exists() {
-            return;
-        }
-        let eff = fs::read(eff_path).expect("read eff");
-        let namco = crate::namco_file::NamcoEffectFile::load(&eff).expect("load namco");
-        let ptcl = namco.ptcl_file.as_ref().expect("ptcl");
-        let loaded = PtclFile::load(&ptcl.base_bytes).expect("parse ptcl");
-        let rust_saved = loaded.save();
-        let expected = fs::read(csharp_path).expect("read csharp ptcl");
-        assert_eq!(rust_saved, expected, "ef_fox Base.ptcl must match C# byte-for-byte");
-    }
-
-    #[test]
-    fn ef_mario_base_ptcl_pure_rust_save() {
-        let eff_path = "/home/leap/Workshop/EffectLibraryRust/References/effect/fighter/mario/ef_mario.eff";
-        let csharp_path = "/tmp/ef_mario_csharp/ef_mario/Base.ptcl";
-        if !Path::new(csharp_path).exists() {
-            return;
-        }
-        let eff = fs::read(eff_path).expect("read eff");
-        let namco = crate::namco_file::NamcoEffectFile::load(&eff).expect("load namco");
-        let ptcl = namco.ptcl_file.as_ref().expect("ptcl");
-        let loaded = PtclFile::load(&ptcl.base_bytes).expect("parse ptcl");
-        let rust_saved = loaded.save();
-        let expected = fs::read(csharp_path).expect("read csharp ptcl");
-        if rust_saved == expected {
-            eprintln!("Base.ptcl: exact match ({} bytes)", rust_saved.len());
-            return;
-        }
-        eprintln!(
-            "Base.ptcl delta: rust={} csharp={} diff={}",
-            rust_saved.len(),
-            expected.len(),
-            rust_saved.len() as i64 - expected.len() as i64
-        );
-        for i in 0..rust_saved.len().min(expected.len()) {
-            if rust_saved[i] != expected[i] {
-                eprintln!("first diff at 0x{i:x}: rust={:02x} csharp={:02x}", rust_saved[i], expected[i]);
-                break;
-            }
-        }
-    }
-
-    #[test]
-    fn ef_mario_base_ptcl_matches_csharp_when_canonicalizing() {
-        let eff_path = "/home/leap/Workshop/EffectLibraryRust/References/effect/fighter/mario/ef_mario.eff";
-        let csharp_path = "/tmp/ef_mario_csharp/ef_mario/Base.ptcl";
-        if !Path::new(csharp_path).exists() {
-            return;
-        }
-        let eff = fs::read(eff_path).expect("read eff");
-        let namco = crate::namco_file::NamcoEffectFile::load(&eff).expect("load namco");
-        let ptcl = namco.ptcl_file.as_ref().expect("ptcl");
-        let canonical = crate::dumper::Dumper::canonicalize_base_ptcl(&ptcl.base_bytes).expect("canonical");
-        let expected = fs::read(csharp_path).expect("read csharp ptcl");
-        assert_eq!(canonical, expected);
-    }
-
     #[test]
     fn csharp_descriptor_name_order_matches_culture_sort() {
         assert_eq!(
@@ -1311,87 +1248,5 @@ mod tests {
             super::csharp_descriptor_name_order("ef_cmn_fire_indirect01", "ef_cmn_fire05"),
             std::cmp::Ordering::Less,
         );
-    }
-
-    #[test]
-    fn ef_standard_base_ptcl_matches_csharp_dump() {
-        let eff_path = "/home/leap/Workshop/EffectLibraryRust/References/effect/ui/standard/ef_standard.eff";
-        let csharp_path = "/home/leap/Workshop/EffectLibraryRust/ef_standard/Base.ptcl";
-        if !Path::new(csharp_path).exists() {
-            return;
-        }
-        let eff = fs::read(eff_path).expect("read eff");
-        let namco = crate::namco_file::NamcoEffectFile::load(&eff).expect("load namco");
-        let ptcl = namco.ptcl_file.as_ref().expect("ptcl");
-        let loaded = PtclFile::load(&ptcl.base_bytes).expect("parse ptcl");
-        let rust_saved = loaded.save();
-        let expected = fs::read(csharp_path).expect("read csharp ptcl");
-        assert_eq!(rust_saved, expected, "ef_standard Base.ptcl must match C# byte-for-byte");
-    }
-
-    #[test]
-    fn ef_zelda_base_ptcl_matches_csharp_dump() {
-        let eff_path = "/home/leap/Workshop/EffectLibraryRust/References/effect/fighter/zelda/ef_zelda.eff";
-        let csharp_path =
-            "/home/leap/Workshop/EffectLibraryRust/crate/.batch_verify_fix/cs/ef_zelda/ef_zelda/Base.ptcl";
-        if !Path::new(csharp_path).exists() {
-            return;
-        }
-        let eff = fs::read(eff_path).expect("read eff");
-        let namco = crate::namco_file::NamcoEffectFile::load(&eff).expect("load namco");
-        let ptcl = namco.ptcl_file.as_ref().expect("ptcl");
-        let loaded = PtclFile::load(&ptcl.base_bytes).expect("parse ptcl");
-        let rust_saved = loaded.save();
-        let expected = fs::read(csharp_path).expect("read csharp ptcl");
-        assert_eq!(rust_saved, expected, "ef_zelda Base.ptcl must match C# byte-for-byte");
-    }
-
-    #[test]
-    fn ef_common_base_ptcl_matches_csharp_dump() {
-        let eff_path = "/home/leap/Workshop/EffectLibraryRust/References/effect/system/common/ef_common.eff";
-        let csharp_path =
-            "/home/leap/Workshop/EffectLibraryRust/crate/.batch_verify_fix/cs/ef_common/ef_common/Base.ptcl";
-        if !Path::new(csharp_path).exists() {
-            return;
-        }
-        let eff = fs::read(eff_path).expect("read eff");
-        let namco = crate::namco_file::NamcoEffectFile::load(&eff).expect("load namco");
-        let ptcl = namco.ptcl_file.as_ref().expect("ptcl");
-        let loaded = PtclFile::load(&ptcl.base_bytes).expect("parse ptcl");
-        let rust_saved = loaded.save();
-        let expected = fs::read(csharp_path).expect("read csharp ptcl");
-        assert_eq!(rust_saved, expected, "ef_common Base.ptcl must match C# byte-for-byte");
-    }
-
-    #[test]
-    fn ef_animal_city_empty_g3nt_magic_roundtrip() {
-        let eff_path = "/home/leap/Workshop/EffectLibraryRust/References/effect/stage/animal_city/ef_animal_city.eff";
-        let csharp_path = "/home/leap/Workshop/EffectLibraryRust/ef_animal_city/Base.ptcl";
-        if !Path::new(csharp_path).exists() {
-            return;
-        }
-        let eff = fs::read(eff_path).expect("read eff");
-        let namco = crate::namco_file::NamcoEffectFile::load(&eff).expect("load namco");
-        let ptcl = namco.ptcl_file.as_ref().expect("ptcl");
-        let loaded = PtclFile::load(&ptcl.base_bytes).expect("parse ptcl");
-        let primitive_info = loaded.primitive_info.as_ref().expect("primitive_info");
-        assert_eq!(
-            primitive_info.desc_table_magic, [0, 0, 0, 0],
-            "empty G3NT tables keep zero magic from source"
-        );
-        let rust_saved = loaded.save();
-        let expected = fs::read(csharp_path).expect("read csharp ptcl");
-        assert_eq!(rust_saved, expected, "ef_animal_city Base.ptcl must match C# byte-for-byte");
-    }
-
-    #[test]
-    fn base_ptcl_matches_csharp_canonical_output() {
-        let source_path = "/home/leap/Workshop/EffectLibraryRust/crate/output_test/Base.ptcl";
-        let expected_path = "/home/leap/Workshop/EffectLibraryRust/crate/output_test/Base.csharp.ptcl";
-        let bytes = fs::read(source_path).expect("read sample ptcl");
-        let expected = fs::read(expected_path).expect("read canonical ptcl");
-        let ptcl = PtclFile::load(&bytes).expect("parse ptcl");
-        let reserialized = ptcl.save();
-        assert_eq!(reserialized, expected);
     }
 }

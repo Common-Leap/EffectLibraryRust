@@ -53,12 +53,14 @@ pub struct BufferSize {
 }
 
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct VertexBufferSize {
     pub size: u32,
     pub gpu_access_flags: u32,
 }
 
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct VertexBufferStride {
     pub stride: u32,
 }

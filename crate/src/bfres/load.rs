@@ -71,7 +71,7 @@ impl<'a> LoadCtx<'a> {
         Ok(Self::zip_keys_values(keys, values))
     }
 
-    fn load_dict_values_inline<T, F>(&mut self, mut load: F) -> BfresResult<IndexMap<String, T>>
+    fn load_dict_values_inline<T, F>(&mut self, load: F) -> BfresResult<IndexMap<String, T>>
     where
         F: FnMut(&mut Self) -> BfresResult<T>,
     {
@@ -299,10 +299,7 @@ impl<'a> LoadCtx<'a> {
         Ok((keys[model_index].clone(), model))
     }
 
-    pub fn load_res_file_for_export(
-        &mut self,
-        model_index: usize,
-    ) -> BfresResult<(ResFileData, String, Model)> {
+    fn prepare_for_export(&mut self) -> BfresResult<(ResFileData, u64, u64, usize)> {
         let magic = self.reader.read_bytes(4)?;
         if magic != b"FRES" {
             return Err(BfresError::InvalidMagic);
@@ -358,12 +355,13 @@ impl<'a> LoadCtx<'a> {
         self.reader.seek(resume)?;
         let _string_pool_size = self.reader.read_u32()?;
         let _num_model = self.reader.read_u16()?;
-        let resume = self.reader.pos;
+        let export_resume = self.reader.pos;
 
-        let (model_name, model) =
-            self.load_model_by_index(model_dict_offset, model_offset, model_index)?;
+        Ok((file, model_dict_offset, model_offset, export_resume))
+    }
 
-        self.reader.seek(resume)?;
+    fn finish_export_file(&mut self, file: &mut ResFileData, export_resume: usize) -> BfresResult<()> {
+        self.reader.seek(export_resume)?;
 
         if file.version_major >= 9 {
             let unk1 = self.reader.read_u16()?;
@@ -388,6 +386,22 @@ impl<'a> LoadCtx<'a> {
         if file.reserve10 == 1 || file.external_flag != 0 {
             file.data_alignment_override = 0x1000;
         }
+
+        Ok(())
+    }
+
+    pub fn load_res_file_for_export(
+        &mut self,
+        model_index: usize,
+    ) -> BfresResult<(ResFileData, String, Model)> {
+        let (mut file, model_dict_offset, model_offset, export_resume) =
+            self.prepare_for_export()?;
+
+        let (model_name, model) =
+            self.load_model_by_index(model_dict_offset, model_offset, model_index)?;
+
+        self.reader.seek(export_resume)?;
+        self.finish_export_file(&mut file, export_resume)?;
 
         Ok((file, model_name, model))
     }
@@ -428,11 +442,6 @@ impl<'a> LoadCtx<'a> {
             self.reader.align(2)?;
         }
         Ok(())
-    }
-
-    fn load_model(&mut self) -> BfresResult<Model> {
-        self.load_model_inner()
-            .map_err(|e| BfresError::InvalidData(format!("load_model: {e}")))
     }
 
     fn load_model_inner(&mut self) -> BfresResult<Model> {
@@ -1241,4 +1250,45 @@ pub fn load_from_bytes(data: &[u8]) -> BfresResult<ResFileData> {
 pub fn load_for_export(data: &[u8], model_index: usize) -> BfresResult<(ResFileData, String, Model)> {
     let mut ctx = LoadCtx::new(data);
     ctx.load_res_file_for_export(model_index)
+}
+
+/// Reusable BFRES export context that parses file headers once per source blob.
+pub struct ResExportSession<'a> {
+    pub ctx: LoadCtx<'a>,
+    file: ResFileData,
+    model_dict_offset: u64,
+    model_offset: u64,
+    export_resume: usize,
+    footer_loaded: bool,
+}
+
+impl<'a> ResExportSession<'a> {
+    pub fn open(data: &'a [u8]) -> BfresResult<Self> {
+        let mut ctx = LoadCtx::new(data);
+        let (file, model_dict_offset, model_offset, export_resume) = ctx.prepare_for_export()?;
+        Ok(Self {
+            ctx,
+            file,
+            model_dict_offset,
+            model_offset,
+            export_resume,
+            footer_loaded: false,
+        })
+    }
+
+    pub fn export_model(&mut self, model_index: usize) -> BfresResult<(ResFileData, String, Model)> {
+        let (model_name, model) = self.ctx.load_model_by_index(
+            self.model_dict_offset,
+            self.model_offset,
+            model_index,
+        )?;
+
+        if !self.footer_loaded {
+            self.ctx.reader.seek(self.export_resume)?;
+            self.ctx.finish_export_file(&mut self.file, self.export_resume)?;
+            self.footer_loaded = true;
+        }
+
+        Ok((self.file.clone(), model_name, model))
+    }
 }

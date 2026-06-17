@@ -64,10 +64,6 @@ impl BinWriter {
         self.output
     }
 
-    pub fn truncate(&mut self, len: usize) {
-        self.output.truncate(len);
-    }
-
     pub fn write_u8(&mut self, value: u8) {
         self.output.push(value);
     }
@@ -111,10 +107,6 @@ impl BinWriter {
     pub fn align_bytes(&mut self, align: usize) {
         let padding = (align - (self.output.len() % align)) % align;
         self.write_zeroes(padding);
-    }
-
-    pub fn patch_u8(&mut self, offset: usize, value: u8) {
-        self.output[offset] = value;
     }
 
     pub fn patch_u16(&mut self, offset: usize, value: u16) {

@@ -59,7 +59,7 @@ struct ShaderReflectionHeader {
 }
 
 #[derive(Debug, Clone, Default)]
-struct ShaderReflectionData {
+pub struct ShaderReflectionData {
     header: ShaderReflectionHeader,
     inputs: Vec<String>,
     outputs: Vec<String>,
@@ -1186,31 +1186,3 @@ fn res_string_compare(left: &str, right: &str) -> std::cmp::Ordering {
     left.cmp(right)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[test]
-    fn ef_mario_bnsh_parity() {
-        use std::fs;
-        for (label, path) in [("main", "/tmp/main_bnsh.bin"), ("compute", "/tmp/compute_bnsh.bin")] {
-            if !std::path::Path::new(path).exists() {
-                continue;
-            }
-            let original = fs::read(path).expect("read");
-            let file = BnshFile::read(&original).expect("parse");
-            let written = file.write();
-            assert_eq!(original, written, "{label} BNSH mismatch");
-            eprintln!("{label}: MATCH ({} bytes)", original.len());
-        }
-    }
-
-    #[test]
-    fn test_shader_bnsh_roundtrip() {
-        let original = fs::read("../ef_samus/P_SamusFinalGround/impact1_b/Shader.bnsh").expect("failed to read shader.bnsh");
-        let bnsh = BnshFile::read(&original).expect("failed to parse BNSH");
-        let written = bnsh.write();
-        assert_eq!(original, written, "BNSH roundtrip failed");
-    }
-}

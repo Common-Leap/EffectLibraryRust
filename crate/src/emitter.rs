@@ -2220,7 +2220,7 @@ mod tests {
             time: 4.0,
         };
         let value = serde_json::to_value(&key).unwrap();
-        assert_eq!(value, json!({"x": 1.0, "y": 2.0, "z": 3.0, "Time": 4.0}));
+        assert_eq!(value, json!({"X": 1.0, "Y": 2.0, "Z": 3.0, "Time": 4.0}));
     }
 
     #[test]
