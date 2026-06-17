@@ -1,6 +1,6 @@
 [package]
 name = "effect_library"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 description = "Load, dump, and re-encode Nintendo Switch VFX effect files (.eff, .ptcl, BFRES, BNTX, BNSH)"
 readme = "README.md"

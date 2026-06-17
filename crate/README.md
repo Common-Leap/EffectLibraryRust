@@ -23,7 +23,7 @@ Add a dependency from [crates.io](https://crates.io/crates/effect_library):
 
 ```toml
 [dependencies]
-effect_library = "0.1"
+effect_library = "1.0"
 ```
 
 Or use a path/git checkout if you are hacking on this repo:
