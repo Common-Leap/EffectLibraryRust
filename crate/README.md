@@ -17,6 +17,23 @@ Dump an effect archive to a folder:
 ./target/release/effect_dumper dump /path/to/ef_mario.eff /path/to/output
 ```
 
+## Using as a Rust crate
+
+Add a dependency from [crates.io](https://crates.io/crates/effect_library):
+
+```toml
+[dependencies]
+effect_library = "0.1"
+```
+
+Or use a path/git checkout if you are hacking on this repo:
+
+```toml
+[dependencies]
+effect_library = { path = "../EffectLibraryRust/crate" }
+# effect_library = { git = "https://github.com/Common-Leap/EffectLibraryRust" }
+```
+
 ### Load and dump an `.eff` file
 
 ```rust
@@ -101,11 +118,3 @@ The script compares Rust output against C# for every `.eff` under `References/ef
 
 - [EffectLibrary](https://github.com/KillzXGaming/EffectLibrary) — reference implementation this port is based on
 - [eff_lib](https://github.com/ultimate-research/eff_lib/tree/main) — original project
-
-## Publishing (maintainers)
-
-From the repo root, after logging in with `cargo login`:
-
-```bash
-cargo publish -p effect_library
-```

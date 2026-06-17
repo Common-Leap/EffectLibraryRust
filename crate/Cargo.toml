@@ -2,7 +2,15 @@
 name = "effect_library"
 version = "0.1.0"
 edition = "2021"
-description = "A Rust library for decompiling Nintendo Switch VFX effect files (.eff, .ptcl)"
+description = "Load, dump, and re-encode Nintendo Switch VFX effect files (.eff, .ptcl, BFRES, BNTX, BNSH)"
+readme = "README.md"
+license = "MIT"
+authors = ["Common Leap"]
+repository = "https://github.com/Common-Leap/EffectLibraryRust"
+homepage = "https://github.com/Common-Leap/EffectLibraryRust"
+keywords = ["nintendo", "switch", "vfx", "eff", "ptcl", "bfres"]
+categories = ["parser-implementations", "game-development"]
+exclude = ["scripts/**", "target/**"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
