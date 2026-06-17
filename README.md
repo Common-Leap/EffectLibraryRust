@@ -17,6 +17,30 @@ Dump an effect archive to a folder:
 ./target/release/effect_dumper dump /path/to/ef_mario.eff /path/to/output
 ```
 
+Or install the binary from crates.io:
+
+```bash
+cargo install effect_library
+effect_dumper dump /path/to/ef_mario.eff /path/to/output
+```
+
+## Using as a Rust crate
+
+Add a dependency from [crates.io](https://crates.io/crates/effect_library):
+
+```toml
+[dependencies]
+effect_library = "1.0"
+```
+
+Or use a path/git checkout if you are hacking on this repo:
+
+```toml
+[dependencies]
+effect_library = { path = "../EffectLibraryRust/crate" }
+# effect_library = { git = "https://github.com/Common-Leap/EffectLibraryRust" }
+```
+
 ### Load and dump an `.eff` file
 
 ```rust
