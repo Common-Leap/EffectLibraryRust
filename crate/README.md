@@ -1,131 +1,76 @@
-# EffectLibraryRust
+# effect_library
 
-Rust library and CLI for loading and saving Nintendo Switch VFX effect files (`.eff`, `.ptcl`). Decompiles `.eff` archives into editable JSON/text assets and re-encodes them with byte-for-byte parity against the reference C# exporter.
+Rust library and CLI for Nintendo Switch VFX effect files (`.eff`, `.ptcl`). Decompiles archives into editable JSON/text assets and re-encodes them with byte-for-byte parity against the reference C# exporter.
 
-**Crates.io:** [`effect_library`](https://crates.io/crates/effect_library) **`1.0.1`**
+**Crates.io:** [`effect_library`](https://crates.io/crates/effect_library) **`1.1.0`**
 
 ## Build
 
+From the repo root:
+
 ```bash
-cd crate
-cargo build --release --bin effect_dumper
+cargo build --release --bin effect_converter
+```
+
+Or from this directory:
+
+```bash
+cargo build --release --bin effect_converter
 ```
 
 ## CLI usage
 
-Dump an effect archive to a folder:
-
 ```bash
-./target/release/effect_dumper dump /path/to/ef_mario.eff /path/to/output
+effect_converter dump /path/to/ef_mario.eff /path/to/output
+effect_converter build /path/to/output/ef_mario /path/to/ef_mario_NEW.eff
 ```
 
-Or install the binary from crates.io:
+Install the crate from crates.io (binary name: `effect_converter`):
 
 ```bash
 cargo install effect_library
-effect_dumper dump /path/to/ef_mario.eff /path/to/output
 ```
 
-## Using as a Rust crate
-
-Add a dependency from [crates.io](https://crates.io/crates/effect_library):
+## Library API
 
 ```toml
 [dependencies]
-effect_library = "1.0.1"
+effect_library = "1.1.0"
 ```
-
-Or use a path/git checkout if you are hacking on this repo:
-
-```toml
-[dependencies]
-effect_library = { path = "../EffectLibraryRust/crate" }
-# effect_library = { git = "https://github.com/Common-Leap/EffectLibraryRust" }
-```
-
-### Load and dump an `.eff` file
 
 ```rust
-use effect_library::{Dumper, NamcoEffectFile};
+use effect_library::{Creator, Dumper, NamcoEffectFile, PtclFile};
 use std::fs;
 
-let data = fs::read("ef_mario.eff")?;
-let namco = NamcoEffectFile::load(&data)?;
-
-// Write NamcoFile.json, Base.ptcl, emitter folders, embedded assets, etc.
-Dumper::dump_namco(&namco, "output/ef_mario")?;
-```
-
-`NamcoEffectFile` exposes the parsed EFFN header, effect entries, and an optional embedded `PtclFile`.
-
-### Work with PTCL directly
-
-```rust
-use effect_library::PtclFile;
-use std::fs;
-
-let bytes = fs::read("Base.ptcl")?;
-let ptcl = PtclFile::load(&bytes)?;
-
-// Inspect or modify in memory, then re-encode
-let roundtrip = ptcl.save();
-```
-
-You can also dump a `PtclFile` that came from a loaded `.eff`:
-
-```rust
-use effect_library::{Dumper, NamcoEffectFile};
-
+// Load and dump
 let namco = NamcoEffectFile::load(&fs::read("ef_mario.eff")?)?;
-if let Some(ptcl) = &namco.ptcl_file {
-    Dumper::dump_ptcl(ptcl, "output/ptcl_only")?;
-}
+Dumper::dump_namco(&namco, "output/ef_mario")?;
+
+// Rebuild
+let rebuilt = Creator::create_namco_from_folder("output/ef_mario")?
+    .expect("effect has Base.ptcl");
+fs::write("ef_mario_NEW.eff", rebuilt.save()?)?;
+
+// PTCL only
+let ptcl = PtclFile::load(&fs::read("Base.ptcl")?)?;
+let bytes = ptcl.save();
 ```
 
-### Export embedded BFRES / BNTX / BNSH assets
-
-Primitive models and textures live inside the PTCL blob. The submodules expose load/save helpers:
-
-```rust
-use effect_library::bfres::{export_single_model, ResFile};
-use effect_library::bntx;
-use effect_library::bnsh;
-
-// Export one embedded model by descriptor-table index
-let source = namco.ptcl_file.as_ref().unwrap()
-    .primitive_info.as_ref().unwrap()
-    .binary_data.as_ref().unwrap();
-let bfres_bytes = export_single_model(source, model_index)?;
-
-// Round-trip / normalize a standalone BFRES file
-let normalized = ResFile::canonicalize(&bfres_bytes)?;
-
-// Re-order embedded BNTX textures and re-save
-let reordered = bntx::reorder_and_save(&bntx_bytes, &texture_names)?;
-
-// Normalize BNSH shader binaries
-let bnsh_bytes = bnsh::canonicalize(&shader_bytes)?;
-```
-
-### JSON metadata
-
-`NamcoEffectFile::export_to_json()` returns the same structure written to `NamcoFile.json` during a dump, which you can serialize with `serde_json` if you want metadata without writing files to disk.
+Submodules `bfres`, `bntx`, and `bnsh` expose load/save helpers for embedded asset pools.
 
 ## Verification
 
-Comparison scripts under `crate/scripts/` download and build reference tools automatically (crates.io `effect_library` **1.0.0** as a regression baseline, Joob's C# fork, and the local **1.0.1** build). Game `.eff` files cannot be downloaded automatically; the setup step symlinks `References/effect/` from a known local export path or from `$EFFECT_REFERENCE_PATH` when set.
+See the [repository README](../README.md#verification) for comparison scripts. Run from this directory:
 
 ```bash
-cd crate
-python3 scripts/compare_setup.py --all   # optional: prefetch everything
-python3 scripts/batch_eff_compare.py     # C# vs 1.0.1 (accuracy)
-python3 scripts/compare_published_vs_optimized.py  # 1.0.0 vs 1.0.1
-python3 scripts/speedtest_csharp_rust.py
+python3 scripts/batch_eff_roundtrip.py
+python3 scripts/speedtest_roundtrip.py --csharp
 ```
 
-Each script calls setup on startup, compares every `.eff` under `References/effect/`, writes temp output to `References/tmp/`, and deletes it when finished.
+Requires local `.eff` files (see `scripts/compare_setup.py`).
 
 ## Credits
 
-- [EffectLibrary](https://github.com/KillzXGaming/EffectLibrary) — reference implementation this port is based on
-- [eff_lib](https://github.com/ultimate-research/eff_lib/tree/main) — original project
+- [EffectLibrary](https://github.com/KillzXGaming/EffectLibrary)
+- [Joob's EffectLibrary fork](https://github.com/joobert/EffectLibrary)
+- [eff_lib](https://github.com/ultimate-research/eff_lib/tree/main)

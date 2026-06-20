@@ -264,6 +264,9 @@ pub struct Emitter {
     pub data: crate::emitter::EmitterData,
     #[serde(skip)]
     pub binary_data: Option<Vec<u8>>,
+    /// Pre-serialized EMTR binary when `EmitterData::write` succeeds at load time.
+    #[serde(skip)]
+    pub cached_binary: Option<Vec<u8>>,
     pub subsections: Vec<EmitterSubSection>,
     pub children: Vec<Emitter>,
 }

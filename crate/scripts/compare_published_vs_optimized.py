@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare crates.io effect_library 1.0.0 dump output vs local optimized build."""
+"""Compare crates.io effect_library 1.0.0 dump output vs local 1.1.0 build."""
 
 import filecmp
 import os

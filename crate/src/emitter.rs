@@ -1,14 +1,26 @@
 use base64::Engine;
 use crate::enums::{ColorType, WrapMode};
 use crate::reader::ReaderExt;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::io::Read;
+
+mod emitter_write;
 
 fn serialize_base64<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
     serializer.serialize_str(&base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+fn deserialize_base64<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    base64::engine::general_purpose::STANDARD
+        .decode(s)
+        .map_err(serde::de::Error::custom)
 }
 
 /// Check if a field should be read for the given VFX version.
@@ -47,7 +59,7 @@ pub enum VersionCompare {
 
 // ─── TextureSampler ────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct TextureSampler {
     #[serde(rename = "TextureID")]
@@ -137,7 +149,7 @@ impl TextureSampler {
 
 // ─── TextureAnim ───────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct TextureAnim {
     pub pattern_anim_type: u8,
@@ -180,7 +192,7 @@ impl TextureAnim {
 
 // ─── AnimationKey / AnimationKeyTable ──────────────────────────────
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct AnimationKey {
     #[serde(rename = "X")]
     pub x: f32,
@@ -212,7 +224,7 @@ impl AnimationKey {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct AnimationKeyTable {
     pub keys: [AnimationKey; 8],
@@ -230,7 +242,7 @@ impl AnimationKeyTable {
 
 // ─── TexPatAnim ────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct TexPatAnim {
     pub num: f32,
@@ -262,7 +274,7 @@ impl TexPatAnim {
 
 // ─── TexScrollAnim ─────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct TexScrollAnim {
     pub scroll_add_x: f32,
@@ -320,7 +332,7 @@ impl TexScrollAnim {
 
 // ─── EmitterStatic ─────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct EmitterStatic {
     pub flags1: u32,
@@ -719,7 +731,7 @@ impl EmitterStatic {
 
 // ─── EmitterInfo ───────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct EmitterInfo {
     #[serde(rename = "IsParticleDraw")]
@@ -871,7 +883,7 @@ impl EmitterInfo {
 
 // ─── EmitterInheritance ────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct EmitterInheritance {
     #[serde(rename = "Velocity")]
@@ -947,7 +959,7 @@ impl EmitterInheritance {
 
 // ─── Emission ──────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Emission {
     #[serde(rename = "isOneTime")]
@@ -1024,7 +1036,7 @@ impl Emission {
 
 // ─── EmitterShapeInfo ──────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct EmitterShapeInfo {
     #[serde(rename = "VolumeType")]
@@ -1142,7 +1154,7 @@ impl EmitterShapeInfo {
 
 // ─── EmitterRenderState ────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct EmitterRenderState {
     #[serde(rename = "IsBlendEnable")]
@@ -1184,7 +1196,7 @@ impl EmitterRenderState {
 
 // ─── ParticleData ──────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ParticleData {
     #[serde(rename = "InfiniteLife")]
@@ -1335,7 +1347,7 @@ impl ParticleData {
 
 // ─── EmitterCombiner (version < 40) ────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct EmitterCombiner {
     #[serde(rename = "ColorCombinerProcess")]
@@ -1412,7 +1424,7 @@ impl EmitterCombiner {
 
 // ─── EmitterCombinerV36 (version == 36) ────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct EmitterCombinerV36 {
     #[serde(rename = "ColorCombinerProcess")]
@@ -1450,7 +1462,7 @@ impl EmitterCombinerV36 {
 
 // ─── CombinedEmitterCombinerV40 (version > 40) ─────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct CombinedEmitterCombinerV40 {
     #[serde(rename = "ColorCombinerProcess")]
@@ -1538,7 +1550,7 @@ impl CombinedEmitterCombinerV40 {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum EmitterCombinerVariant {
     Legacy(EmitterCombiner),
@@ -1548,7 +1560,7 @@ pub enum EmitterCombinerVariant {
 
 // ─── ShaderRefInfo ─────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ShaderRefInfo {
     #[serde(rename = "Type")]
@@ -1584,10 +1596,10 @@ pub struct ShaderRefInfo {
     #[serde(rename = "Unknown2")]
     pub unknown2: u64,
     #[serde(rename = "UserShaderDefine1")]
-    #[serde(serialize_with = "serialize_base64")]
+    #[serde(serialize_with = "serialize_base64", deserialize_with = "deserialize_base64")]
     pub user_shader_define1: Vec<u8>,
     #[serde(rename = "UserShaderDefine2")]
-    #[serde(serialize_with = "serialize_base64")]
+    #[serde(serialize_with = "serialize_base64", deserialize_with = "deserialize_base64")]
     pub user_shader_define2: Vec<u8>,
 }
 
@@ -1621,7 +1633,7 @@ impl ShaderRefInfo {
 
 // ─── ActionInfo ────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ActionInfo {
     #[serde(rename = "ActionIndex")]
@@ -1648,7 +1660,7 @@ impl ActionInfo {
 
 // ─── ParticleVelocityInfo ──────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ParticleVelocityInfo {
     #[serde(rename = "AllDirection")]
@@ -1698,7 +1710,7 @@ impl ParticleVelocityInfo {
 
 // ─── ParticleColor ─────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ParticleColor {
     #[serde(rename = "IsSoftParticle")]
@@ -1772,7 +1784,7 @@ impl ParticleColor {
 
 // ─── ParticleScale ─────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ParticleScale {
     #[serde(rename = "ScaleX")]
@@ -1822,7 +1834,7 @@ impl ParticleScale {
 
 // ─── ParticleFlucInfo ──────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ParticleFlucInfo {
     #[serde(rename = "IsApplyAlpha")]
@@ -1863,7 +1875,7 @@ impl ParticleFlucInfo {
 
 // ─── EmitterData (top-level) ───────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct EmitterData {
     #[serde(rename = "Flag")]
@@ -1917,7 +1929,7 @@ pub struct EmitterData {
     #[serde(rename = "TextureAnim2")]
     pub texture_anim2: Option<TextureAnim>,
     #[serde(rename = "Reserved")]
-    #[serde(serialize_with = "serialize_base64")]
+    #[serde(serialize_with = "serialize_base64", deserialize_with = "deserialize_base64")]
     pub reserved: Vec<u8>,
     #[serde(skip)]
     pub namev40: Option<String>,
@@ -2164,6 +2176,19 @@ impl EmitterData {
         String::new()
     }
 
+    /// Load emitter data from dumped JSON, mirroring C# `PtclSerialize.Deserialize`.
+    pub fn from_json(json: &str, version: u16) -> std::io::Result<Self> {
+        let mut data: EmitterData = serde_json::from_str(json).map_err(|err| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string())
+        })?;
+        if version >= 40 {
+            if data.namev40.is_none() {
+                data.namev40 = data.name.clone();
+            }
+        }
+        Ok(data)
+    }
+
     /// Get all texture samplers as a flat list.
     pub fn get_samplers(&self) -> Vec<&TextureSampler> {
         let mut s = Vec::new();
@@ -2191,7 +2216,7 @@ impl EmitterData {
 
 // ─── EmitterAnimation (sub-section) ────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmitterAnimation {
     pub magic: String,
     pub data: Vec<u8>,
@@ -2224,6 +2249,37 @@ mod tests {
     }
 
     #[test]
+    fn emitter_data_binary_write_roundtrip() {
+        let sample = std::path::Path::new(
+            "/home/leap/Workshop/Smash Mod Tools/ArcExplorer_linux_x64/export/effect/pokemon/mijumaru/ef_mijumaru.eff",
+        );
+        if !sample.is_file() {
+            return;
+        }
+
+        let data = std::fs::read(sample).expect("read sample eff");
+        let namco = crate::NamcoEffectFile::load(&data).expect("load eff");
+        let ptcl = namco.ptcl_file.as_ref().expect("ptcl present");
+        let version = ptcl.vfx_version;
+
+        for emitter_set in &ptcl.emitter_list.emitter_sets {
+            for emitter in &emitter_set.emitters {
+                let original = emitter
+                    .binary_data
+                    .as_ref()
+                    .expect("emitter binary present");
+                let rewritten = emitter.data.write(version).expect("write emitter data");
+                assert_eq!(
+                    original.as_slice(),
+                    rewritten.as_slice(),
+                    "emitter {:?} write mismatch",
+                    emitter.data.display_name()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn serialize_shader_ref_info_type_field_matches_baseline() {
         let info = ShaderRefInfo {
             type_: 1,
@@ -2253,14 +2309,14 @@ mod tests {
 
 // ─── BNSH Exporter ──────────────────────────────────────────────────────-
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BnshFile {
     pub magic: String,
     pub version: u32,
     pub variations: Vec<ShaderVariation>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShaderVariation {
     pub name: String,
     pub binary_data: Vec<u8>,

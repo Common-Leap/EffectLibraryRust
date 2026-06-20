@@ -21,13 +21,16 @@ PUBLISHED_CRATE_URL = (
     f"effect_library-{PUBLISHED_CRATE_VERSION}.crate"
 )
 PUBLISHED_SRC = REFS / f"effect_library-{PUBLISHED_CRATE_VERSION}"
+# crates.io 1.0.0 shipped the CLI as effect_dumper
 PUBLISHED_BIN = PUBLISHED_SRC / "target" / "release" / "effect_dumper"
 
 CS_REPO = "https://github.com/joobert/EffectLibrary.git"
 CS_DIR = REFS / "EffectLibrary"
 CS_BIN = CS_DIR / "EffectConverter" / "bin" / "Release" / "publish" / "EffectConverter"
+CS_BIN_FALLBACK = ROOT / "bin" / "Release" / "publish" / "EffectConverter"
 
-OPTIMIZED_BIN = ROOT / "crate" / "target" / "release" / "effect_dumper"
+OPTIMIZED_BIN = ROOT / "target" / "release" / "effect_converter"
+OPTIMIZED_BIN_FALLBACK = ROOT / "crate" / "target" / "release" / "effect_converter"
 EFF_BASE = REFS / "effect"
 
 # Common local paths where Smash Ultimate effect archives are extracted.
@@ -113,8 +116,9 @@ def ensure_csharp_repo() -> Path:
 
 
 def ensure_csharp_binary() -> Path:
-    if CS_BIN.is_file():
-        return CS_BIN
+    for candidate in (CS_BIN, CS_BIN_FALLBACK):
+        if candidate.is_file():
+            return candidate
 
     if shutil.which("dotnet") is None:
         raise RuntimeError(
@@ -128,23 +132,31 @@ def ensure_csharp_binary() -> Path:
         ["dotnet", "publish", "-c", "Release", "-o", "bin/Release/publish"],
         cwd=CS_DIR / "EffectConverter",
     )
-    if not CS_BIN.is_file():
-        raise RuntimeError(f"C# build did not produce {CS_BIN}")
-    return CS_BIN
+    for candidate in (CS_BIN, CS_BIN_FALLBACK):
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError(f"C# build did not produce {CS_BIN} or {CS_BIN_FALLBACK}")
 
 
 def ensure_optimized_binary() -> Path:
-    if OPTIMIZED_BIN.is_file():
-        return OPTIMIZED_BIN
+    for candidate in (OPTIMIZED_BIN, OPTIMIZED_BIN_FALLBACK):
+        if candidate.is_file():
+            return candidate
 
-    log("Building optimized effect_dumper from current workspace...")
+    log("Building optimized effect_converter from current workspace...")
+    env = os.environ.copy()
+    env.setdefault("CARGO_TARGET_DIR", str(ROOT / "target"))
     run(
-        ["cargo", "build", "--release", "--bin", "effect_dumper"],
+        ["cargo", "build", "--release", "--bin", "effect_converter"],
         cwd=ROOT / "crate",
+        env=env,
     )
-    if not OPTIMIZED_BIN.is_file():
-        raise RuntimeError(f"Optimized build did not produce {OPTIMIZED_BIN}")
-    return OPTIMIZED_BIN
+    for candidate in (OPTIMIZED_BIN, OPTIMIZED_BIN_FALLBACK):
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError(
+        f"Optimized build did not produce {OPTIMIZED_BIN} or {OPTIMIZED_BIN_FALLBACK}"
+    )
 
 
 def resolve_effect_source() -> Path | None:

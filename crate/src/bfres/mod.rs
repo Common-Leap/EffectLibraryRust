@@ -6,7 +6,10 @@ mod types;
 
 pub use common::BfresError;
 
+pub use types::Model;
+
 use indexmap::IndexMap;
+use std::collections::HashMap;
 use std::io::{self, Cursor, ErrorKind, Write};
 
 use byteorder::{LittleEndian, WriteBytesExt};
@@ -36,6 +39,95 @@ impl ResFile {
     pub fn canonicalize(data: &[u8]) -> io::Result<Vec<u8>> {
         let file = Self::load(data.to_vec())?;
         file.save()
+    }
+
+    /// Return attribute-name indices for the first model, used when rebuilding primitive descriptors.
+    pub fn first_model_attribute_indices(data: &[u8]) -> io::Result<HashMap<String, i8>> {
+        let file = Self::load(data.to_vec())?;
+        Self::attribute_indices_from_model(file.first_model())
+    }
+
+    pub(crate) fn attribute_indices_from_model(model: Option<&Model>) -> io::Result<HashMap<String, i8>> {
+        let mut indices = HashMap::new();
+        if let Some(model) = model {
+            if let Some(vertex_buffer) = model.vertex_buffers.first() {
+                for (index, name) in vertex_buffer.attributes.keys().enumerate() {
+                    indices.insert(name.clone(), index as i8);
+                }
+            }
+        }
+        Ok(indices)
+    }
+
+    /// Parse a single-model export once for pool rebuild.
+    pub fn parse_model_export(data: Vec<u8>) -> io::Result<(String, Model)> {
+        let file = load::load_from_bytes(&data).map_err(io::Error::from)?;
+        let (name, model) = file
+            .models
+            .into_iter()
+            .next()
+            .ok_or_else(|| io::Error::new(ErrorKind::InvalidData, "BFRES export has no models"))?;
+        Ok((name, model))
+    }
+
+    fn first_model(&self) -> Option<&Model> {
+        self.inner.models.values().next()
+    }
+
+    /// Merge single-model BFRES exports into one container (matches C# ResFile.Save after AddPrimitive).
+    pub fn merge_model_files(files: &[Vec<u8>]) -> io::Result<Vec<u8>> {
+        let mut merged: Option<ResFileData> = None;
+        for data in files {
+            let file = load::load_from_bytes(data).map_err(io::Error::from)?;
+            match &mut merged {
+                None => merged = Some(file),
+                Some(existing) => {
+                    for (name, model) in file.models {
+                        existing.models.insert(name, model);
+                    }
+                }
+            }
+        }
+        Ok(match merged {
+            Some(file) => save::save_to_bytes(&file),
+            None => Vec::new(),
+        })
+    }
+
+    /// Repopulate a Base.ptcl BFRES container from per-emitter exports (matches C# AddPrimitive + Save).
+    pub fn rebuild_from_base_and_exports(base: &[u8], exports: &[Vec<u8>]) -> io::Result<Vec<u8>> {
+        if exports.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut models = Vec::with_capacity(exports.len());
+        for data in exports {
+            models.push(Self::parse_model_export(data.clone())?);
+        }
+        Self::rebuild_from_base_and_models(base, None, &models)
+    }
+
+    /// Like [`rebuild_from_base_and_exports`] but reuses models parsed at load time.
+    pub fn rebuild_from_base_and_models(
+        base: &[u8],
+        empty_base_shell: Option<&[u8]>,
+        exports: &[(String, Model)],
+    ) -> io::Result<Vec<u8>> {
+        if exports.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut merged = if !base.is_empty() {
+            load::load_from_bytes(base).map_err(io::Error::from)?
+        } else {
+            let shell = empty_base_shell.ok_or_else(|| {
+                io::Error::new(ErrorKind::InvalidData, "missing BFRES shell for empty base")
+            })?;
+            load::load_from_bytes(shell).map_err(io::Error::from)?
+        };
+        merged.models.clear();
+        for (name, model) in exports {
+            merged.models.insert(name.clone(), model.clone());
+        }
+        Ok(save::save_to_bytes(&merged))
     }
 
     pub fn export_single_model(source: &[u8], model_index: usize) -> io::Result<Vec<u8>> {

@@ -2,11 +2,12 @@ use crate::emitter::EmitterData;
 use crate::namco_file::NamcoEffectFile;
 use crate::ptcl_file::PtclFile;
 use crate::reader::ReaderExt;
+use serde::Deserialize;
 use serde::Serialize;
 use serde_json::{json, to_string_pretty};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
-use std::io::Cursor;
+use std::io::{Cursor, Write};
 use std::path::Path;
 
 type BnshCacheKey = (usize, usize, usize);
@@ -262,7 +263,7 @@ fn format_scientific_csharp(value: f64) -> String {
     format!("{mantissa}E{sign}{:02}", digits)
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct EmitterAnimationSection {
     #[serde(rename = "Enable")]
     enable: bool,
@@ -278,7 +279,7 @@ struct EmitterAnimationSection {
     key_frames: Vec<EmitterAnimationKeyFrame>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct EmitterAnimationKeyFrame {
     #[serde(rename = "X")]
     x: f32,
@@ -317,6 +318,28 @@ fn parse_ea_section(data: &[u8]) -> std::io::Result<EmitterAnimationSection> {
         loop_count,
         key_frames,
     })
+}
+
+/// Serialize an EA emitter animation subsection from dumped JSON.
+pub fn serialize_ea_section_from_json(json: &str) -> std::io::Result<Vec<u8>> {
+    let section: EmitterAnimationSection = serde_json::from_str(json).map_err(|err| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string())
+    })?;
+
+    let mut data = Vec::new();
+    data.push(section.enable as u8);
+    data.push(section.loop_ as u8);
+    data.push(section.randomize_start_frame as u8);
+    data.push(section.reserved);
+    data.write_all(&(section.key_frames.len() as u32).to_le_bytes())?;
+    data.write_all(&section.loop_count.to_le_bytes())?;
+    for key in &section.key_frames {
+        data.write_all(&key.x.to_le_bytes())?;
+        data.write_all(&key.y.to_le_bytes())?;
+        data.write_all(&key.z.to_le_bytes())?;
+        data.write_all(&key.time.to_le_bytes())?;
+    }
+    Ok(data)
 }
 
 /// Converts SCREAMING_SNAKE_CASE to PascalCase with common effect-name abbreviations expanded.

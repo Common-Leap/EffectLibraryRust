@@ -36,13 +36,13 @@ def run_csharp(eff_path: Path, csharp: Path, out_root: Path) -> float:
     return secs
 
 
-def run_rust(dumper: Path, eff_path: Path, out_root: Path, label: str) -> float:
+def run_rust(converter: Path, eff_path: Path, out_root: Path, label: str) -> float:
     name = eff_path.stem
     out = out_root / f"{label}_out" / name
     out.mkdir(parents=True, exist_ok=True)
     t0 = time.perf_counter()
     proc = subprocess.run(
-        [str(dumper), "dump", str(eff_path), str(out)],
+        [str(converter), "dump", str(eff_path), str(out)],
         capture_output=True,
         text=True,
         timeout=600,

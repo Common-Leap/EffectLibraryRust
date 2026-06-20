@@ -1,10 +1,11 @@
 [package]
 name = "effect_library"
-version = "1.0.1"
+version = "1.1.0"
 edition = "2021"
 description = "Load, dump, and re-encode Nintendo Switch VFX effect files (.eff, .ptcl, BFRES, BNTX, BNSH)"
 readme = "README.md"
 license = "MIT"
+license-file = "../LICENSE"
 authors = ["Common Leap"]
 repository = "https://github.com/Common-Leap/EffectLibraryRust"
 homepage = "https://github.com/Common-Leap/EffectLibraryRust"
@@ -21,5 +22,5 @@ byteorder = "1"
 num-bigint = "0.4"
 
 [[bin]]
-name = "effect_dumper"
+name = "effect_converter"
 path = "src/main.rs"

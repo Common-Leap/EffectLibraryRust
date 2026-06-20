@@ -631,6 +631,7 @@ fn parse_emitter<R: Read + Seek>(
         Emitter {
             data,
             binary_data: Some(binary_data),
+            cached_binary: None,
             subsections,
             children,
         },
@@ -729,15 +730,25 @@ fn serialize_subsection(output: &mut Vec<u8>, subsection: &EmitterSubSection, is
     start
 }
 
-fn serialize_emitter(output: &mut Vec<u8>, emitter: &Emitter, is_last: bool) -> usize {
+fn serialize_emitter(output: &mut Vec<u8>, emitter: &Emitter, vfx_version: u16, is_last: bool) -> usize {
     let start = write_section_header(output, "EMTR");
     patch_children_count(output, start, emitter.children.len() as u16);
 
     align_vec(output, 256, 0);
     let binary_start = output.len();
     patch_binary_offset(output, start, binary_start);
-    if let Some(binary_data) = &emitter.binary_data {
-        output.extend_from_slice(binary_data);
+    if let Some(binary) = &emitter.cached_binary {
+        output.extend_from_slice(binary);
+    } else {
+        match emitter.data.write(vfx_version) {
+            Ok(binary) => output.extend_from_slice(&binary),
+            Err(_) if emitter.binary_data.is_some() => {
+                output.extend_from_slice(emitter.binary_data.as_ref().unwrap());
+            }
+            Err(err) => {
+                eprintln!("failed to serialize emitter {:?}: {}", emitter.data.display_name(), err);
+            }
+        }
     }
 
     if !emitter.subsections.is_empty() {
@@ -757,7 +768,7 @@ fn serialize_emitter(output: &mut Vec<u8>, emitter: &Emitter, is_last: bool) -> 
         let child_start = output.len();
         patch_child_offset(output, start, child_start);
         for (idx, child) in emitter.children.iter().enumerate() {
-            serialize_emitter(output, child, idx + 1 == emitter.children.len());
+            serialize_emitter(output, child, vfx_version, idx + 1 == emitter.children.len());
         }
     }
 
@@ -805,7 +816,7 @@ fn serialize_emitter_set(output: &mut Vec<u8>, emitter_set: &EmitterSet, vfx_ver
     let child_start = output.len();
     patch_child_offset(output, start, child_start);
     for (idx, emitter) in emitter_set.emitters.iter().enumerate() {
-        serialize_emitter(output, emitter, idx + 1 == emitter_set.emitters.len());
+        serialize_emitter(output, emitter, vfx_version, idx + 1 == emitter_set.emitters.len());
     }
 
     let section_size = (output.len() - start) as u32;
@@ -1085,15 +1096,24 @@ impl PtclFile {
     }
 
     pub fn load(data: &[u8]) -> io::Result<Self> {
+        Self::load_with_options(data, true)
+    }
+
+    /// Load a PTCL for folder rebuild: header and asset pools only (skip ESTA emitter tree).
+    pub fn load_for_rebuild(data: &[u8]) -> io::Result<Self> {
+        Self::load_with_options(data, false)
+    }
+
+    fn load_with_options(data: &[u8], parse_emitter_tree: bool) -> io::Result<Self> {
         let mut cursor = Cursor::new(data);
-        Self::read(&mut cursor)
+        Self::read(&mut cursor, parse_emitter_tree)
     }
 
     pub fn save(&self) -> Vec<u8> {
         self.serialize()
     }
 
-    fn read<R: Read + Seek>(reader: &mut R) -> io::Result<Self> {
+    fn read<R: Read + Seek>(reader: &mut R, parse_emitter_tree: bool) -> io::Result<Self> {
         let header = BinaryHeader {
             magic: reader.read_u64_le()?,
             graphics_api_version: reader.read_u16_le()?,
@@ -1137,9 +1157,13 @@ impl PtclFile {
 
             match section_header.magic.as_str() {
                 "ESTA" => {
-                    let (header_again, start_again) = SectionHeader::read(&mut cursor)?;
-                    emitter_list = parse_emitter_list(&mut cursor, &header_again, start_again, &header)?;
                     section_order.push(TopLevelSection::EmitterList);
+                    if parse_emitter_tree {
+                        cursor.seek(SeekFrom::Start(section_start))?;
+                        let (header_again, start_again) = SectionHeader::read(&mut cursor)?;
+                        emitter_list =
+                            parse_emitter_list(&mut cursor, &header_again, start_again, &header)?;
+                    }
                 }
                 "GRTF" => {
                     let (header_again, start_again) = SectionHeader::read(&mut cursor)?;

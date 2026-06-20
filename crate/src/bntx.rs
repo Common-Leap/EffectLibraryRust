@@ -9,6 +9,76 @@ use num_bigint::BigUint;
 const SECTION1: usize = 0;
 const SECTION2: usize = 1;
 
+/// Merge single-texture BNTX exports back into one archive (matches C# BntxFile.Save after AddTexture).
+pub fn merge_texture_files(files: &[Vec<u8>]) -> io::Result<Vec<u8>> {
+    let mut merged: Option<BntxFile> = None;
+    for data in files {
+        let file = BntxFile::read(data)?;
+        match &mut merged {
+            None => merged = Some(file),
+            Some(existing) => existing.textures.extend(file.textures),
+        }
+    }
+    merged.map(|file| file.write()).unwrap_or_else(|| Ok(Vec::new()))
+}
+
+/// Repopulate a Base.ptcl BNTX container from per-emitter exports (matches C# AddTexture + Save).
+pub fn rebuild_from_base_and_exports(base: &[u8], exports: &[Vec<u8>]) -> io::Result<Vec<u8>> {
+    if exports.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut textures = Vec::with_capacity(exports.len());
+    for data in exports {
+        let export = BntxFile::read(data)?;
+        let Some(tex) = export.textures.into_iter().next() else {
+            continue;
+        };
+        textures.push(tex);
+    }
+    rebuild_from_base_and_textures(base, None, &textures)
+}
+
+/// Like [`rebuild_from_base_and_exports`] but reuses textures parsed at load time.
+pub(crate) fn rebuild_from_base_and_textures(
+    base: &[u8],
+    empty_base_shell: Option<&[u8]>,
+    exports: &[Texture],
+) -> io::Result<Vec<u8>> {
+    if exports.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut file = if !base.is_empty() {
+        BntxFile::read(base)?
+    } else {
+        let shell = empty_base_shell.ok_or_else(|| {
+            io::Error::new(ErrorKind::InvalidData, "missing BNTX shell for empty base")
+        })?;
+        BntxFile::read(shell)?
+    };
+    file.textures.clear();
+    for tex in exports {
+        if file.textures.iter().any(|existing| existing.name == tex.name) {
+            continue;
+        }
+        file.textures.push(tex.clone());
+    }
+    file.write()
+}
+
+/// Parse a single-texture export once (name + texture payload for pool rebuild).
+pub(crate) fn parse_texture_export(data: &[u8]) -> io::Result<Texture> {
+    let file = BntxFile::read(data)?;
+    file.textures
+        .into_iter()
+        .next()
+        .ok_or_else(|| io::Error::new(ErrorKind::InvalidData, "BNTX export has no textures"))
+}
+
+/// Return the first texture name from a single-texture BNTX export.
+pub fn first_texture_name(data: &[u8]) -> io::Result<String> {
+    Ok(parse_texture_export(data)?.name)
+}
+
 pub fn reorder_and_save(data: &[u8], desired_order: &[String]) -> io::Result<Vec<u8>> {
     if data.len() < 0x58 || &data[..4] != b"BNTX" {
         return Ok(data.to_vec());
@@ -255,8 +325,8 @@ pub(crate) fn build_single_texture_bntx(
 }
 
 #[derive(Debug, Clone)]
-struct Texture {
-    name: String,
+pub(crate) struct Texture {
+    pub(crate) name: String,
     brti_header: Vec<u8>,
     mip_count: u16,
     mip_offsets: Vec<u64>,

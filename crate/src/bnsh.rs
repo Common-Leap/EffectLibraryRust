@@ -395,6 +395,39 @@ impl StringTable {
     }
 }
 
+/// Merge single-variation BNSH exports into one file (matches C# BnshFile.Save after adding variations).
+pub fn merge_variation_files(files: &[Vec<u8>]) -> io::Result<Vec<u8>> {
+    let mut merged: Option<BnshFile> = None;
+    for data in files {
+        let file = BnshFile::read(data)?;
+        match &mut merged {
+            None => merged = Some(file),
+            Some(existing) => existing.variations.extend(file.variations),
+        }
+    }
+    Ok(merged.map(|file| file.write()).unwrap_or_default())
+}
+
+/// Repopulate a Base.ptcl BNSH container from per-emitter exports (matches C# variation rebuild).
+pub fn rebuild_from_base_and_exports(base: &[u8], exports: &[Vec<u8>]) -> io::Result<Vec<u8>> {
+    if exports.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut file = if !base.is_empty() {
+        BnshFile::read(base)?
+    } else {
+        BnshFile::read(&exports[0])?
+    };
+    file.variations.clear();
+    for data in exports {
+        let export = BnshFile::read(data)?;
+        if let Some(variation) = export.variations.into_iter().next() {
+            file.variations.push(variation);
+        }
+    }
+    Ok(file.write())
+}
+
 pub fn canonicalize(data: &[u8]) -> io::Result<Vec<u8>> {
     if data.len() < 4 || &data[..4] != b"BNSH" {
         return Ok(data.to_vec());

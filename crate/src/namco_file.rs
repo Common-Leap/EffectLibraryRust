@@ -250,8 +250,8 @@ impl NamcoEffectFile {
             .map(|n| n.len() + 1)
             .sum::<usize>();
 
-        let align = 0x1000; // 4096 bytes
-        (size + align - 1) & !(align - 1)
+        let align = 0x1000;
+        (size + align) & !(align - 1)
     }
 
     pub fn export_to_json(&self) -> Vec<JsonExportEntry> {
@@ -315,7 +315,7 @@ impl NamcoEffectFile {
         NamcoEffectFile {
             header: EffnHeader {
                 magic: "EFFN".to_string(),
-                version: 0x10100,
+                version: 131_072,
                 num_effects: 0,
                 num_external_models: 0,
                 multi_part_effects: 0,
@@ -331,56 +331,68 @@ impl NamcoEffectFile {
         }
     }
 
-    pub fn from_json(json_content: &str, ptcl: PtclFile) -> std::io::Result<Self> {
+    pub fn from_json(json_content: &str, ptcl: Option<PtclFile>) -> std::io::Result<Self> {
         let entries: Vec<JsonExportEntry> = serde_json::from_str(json_content)?;
 
-        let mut namco = NamcoEffectFile::new(ptcl);
+        let mut namco = match ptcl {
+            Some(ptcl) => NamcoEffectFile::new(ptcl),
+            None => NamcoEffectFile {
+                header: EffnHeader {
+                    magic: "EFFN".to_string(),
+                    version: 131_072,
+                    num_effects: 0,
+                    num_external_models: 0,
+                    multi_part_effects: 0,
+                    header_chunk_align: 0xFFFF,
+                },
+                entries: Vec::new(),
+                effect_variants: Vec::new(),
+                effect_models: Vec::new(),
+                entry_names: Vec::new(),
+                external_model_names: Vec::new(),
+                external_bone_names: Vec::new(),
+                ptcl_file: None,
+            },
+        };
         namco.header.num_effects = entries.len() as u16;
-
-        let mut max_variant_count = 0;
-        let mut external_model_names = std::collections::HashSet::new();
-        let mut external_bone_names = std::collections::HashSet::new();
 
         for entry in &entries {
             namco.entry_names.push(entry.name.clone());
 
-            let mut variant_start_idx = 0;
+            let mut effect_entry = EffectHeader {
+                kind: entry.kind,
+                unknown: entry.unknown,
+                emitter_set_id: entry.emitter_set_id,
+                external_model_idx: 0,
+                variant_start_idx: 0,
+                variant_count: 0,
+            };
+
+            if !entry.external_model_string.is_empty() {
+                effect_entry.external_model_idx = namco.effect_models.len() as u32 + 1;
+                namco.effect_models.push(entry.external_model_flag);
+                namco
+                    .external_model_names
+                    .push(entry.external_model_string.clone());
+            }
+
             if !entry.variants.is_empty() {
-                variant_start_idx = namco.effect_variants.len() as u16 + 1;
+                effect_entry.variant_start_idx = namco.effect_variants.len() as u16 + 1;
+                effect_entry.variant_count = entry.variants.len() as u16;
                 for variant in &entry.variants {
                     namco.effect_variants.push(EffectVariant {
                         start_frame: variant.start_frame,
                         emitter_set_id: variant.emitter_set_id,
                     });
-                    external_bone_names.insert(variant.bone_name.clone());
+                    namco.external_bone_names.push(variant.bone_name.clone());
                 }
-                max_variant_count = max_variant_count.max(entry.variants.len() as u16);
             }
 
-            let external_model_idx = if entry.external_model_flag != 0 {
-                external_model_names.insert(entry.external_model_string.clone());
-                namco.effect_models.push(entry.external_model_flag);
-                namco
-                    .external_model_names
-                    .push(entry.external_model_string.clone());
-                namco.effect_models.len() as u32
-            } else {
-                0
-            };
-
-            namco.entries.push(EffectHeader {
-                kind: entry.kind,
-                unknown: entry.unknown,
-                emitter_set_id: entry.emitter_set_id,
-                external_model_idx,
-                variant_start_idx,
-                variant_count: entry.variants.len() as u16,
-            });
+            namco.entries.push(effect_entry);
         }
 
         namco.header.multi_part_effects = namco.effect_variants.len() as u16;
         namco.header.num_external_models = namco.effect_models.len() as u16;
-        namco.external_bone_names = external_bone_names.into_iter().collect();
 
         Ok(namco)
     }
@@ -389,13 +401,30 @@ impl NamcoEffectFile {
         use std::io::Write;
         let mut data = Vec::new();
 
+        let chunk_align = Self::get_required_chunk_align(
+            &self.entries,
+            &self.effect_variants,
+            &self.entry_names,
+            &self.external_model_names,
+            &self.external_bone_names,
+        );
+        let mut header = self.header.clone();
+        header.num_effects = self.entries.len() as u16;
+        header.multi_part_effects = self.effect_variants.len() as u16;
+        header.num_external_models = self.external_model_names.len() as u16;
+        header.header_chunk_align = if chunk_align >= 0x2000 {
+            2
+        } else {
+            1
+        };
+
         // Write header
-        data.write_all(self.header.magic.as_bytes())?;
-        data.write_all(&self.header.version.to_le_bytes())?;
-        data.write_all(&self.header.num_effects.to_le_bytes())?;
-        data.write_all(&self.header.num_external_models.to_le_bytes())?;
-        data.write_all(&self.header.multi_part_effects.to_le_bytes())?;
-        data.write_all(&self.header.header_chunk_align.to_le_bytes())?;
+        data.write_all(header.magic.as_bytes())?;
+        data.write_all(&header.version.to_le_bytes())?;
+        data.write_all(&header.num_effects.to_le_bytes())?;
+        data.write_all(&header.num_external_models.to_le_bytes())?;
+        data.write_all(&header.multi_part_effects.to_le_bytes())?;
+        data.write_all(&header.header_chunk_align.to_le_bytes())?;
 
         // Write entries
         for entry in &self.entries {
@@ -435,15 +464,8 @@ impl NamcoEffectFile {
         }
 
         // Align to chunk boundary
-        let align = Self::get_required_chunk_align(
-            &self.entries,
-            &self.effect_variants,
-            &self.entry_names,
-            &self.external_model_names,
-            &self.external_bone_names,
-        );
         let current_size = data.len();
-        let aligned_size = (current_size + align - 1) & !(align - 1);
+        let aligned_size = (current_size + chunk_align - 1) & !(chunk_align - 1);
         let padding = aligned_size - current_size;
         data.extend(std::iter::repeat(0u8).take(padding));
 

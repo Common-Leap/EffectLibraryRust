@@ -78,6 +78,23 @@ impl Serialize for ColorType {
     }
 }
 
+impl<'de> serde::Deserialize<'de> for ColorType {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match value {
+            serde_json::Value::String(s) => match s.as_str() {
+                "Constant" => Ok(ColorType::Constant),
+                "Random" => Ok(ColorType::Random),
+                "Animated8Key" => Ok(ColorType::Animated8Key),
+                other => Err(Error::custom(format!("unknown ColorType: {other}"))),
+            },
+            serde_json::Value::Number(n) => Ok(ColorType::from_u8(n.as_u64().unwrap_or(0) as u8)),
+            _ => Err(Error::custom("invalid ColorType")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum WrapMode {
     Mirror,
@@ -125,6 +142,24 @@ impl Serialize for WrapMode {
             serializer.serialize_str(name)
         } else {
             serializer.serialize_u8(self.as_u8())
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for WrapMode {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match value {
+            serde_json::Value::String(s) => match s.as_str() {
+                "Mirror" => Ok(WrapMode::Mirror),
+                "Repeat" => Ok(WrapMode::Repeat),
+                "ClampEdge" => Ok(WrapMode::ClampEdge),
+                "MirrorOnce" => Ok(WrapMode::MirrorOnce),
+                other => Err(Error::custom(format!("unknown WrapMode: {other}"))),
+            },
+            serde_json::Value::Number(n) => Ok(WrapMode::from_u8(n.as_u64().unwrap_or(0) as u8)),
+            _ => Err(Error::custom("invalid WrapMode")),
         }
     }
 }
